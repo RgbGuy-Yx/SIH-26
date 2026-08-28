@@ -1,0 +1,10 @@
+[
+  "hour_of_day",
+  "current_accumulated_delay",
+  "priority_tier",
+  "is_foggy",
+  "avg_temperature",
+  "total_precipitation",
+  "avg_wind_speed",
+  "avg_cloud_cover"
+]
