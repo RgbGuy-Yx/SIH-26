@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: 'class', theme: { extend: { colors: { 'surface-container-lowest': '#030e20', 'secondary-fixed': '#d7e3ff', 'on-primary': '#002780', 'on-primary-fixed-variant': '#0039b4', 'secondary-container': '#22467e', 'on-error': '#690005', 'outline-variant': '#434655', 'surface-container-high': '#1f2a3d', 'on-background': '#d8e3fc', 'inverse-primary': '#1e51db', 'on-secondary-container': '#95b6f4', 'on-tertiary-fixed-variant': '#003cad', 'outline': '#8e90a0', 'surface-bright': '#2f394d', 'on-primary-fixed': '#001551', 'surface-variant': '#2a3549', 'on-surface': '#d8e3fc', 'error': '#ffb4ab', 'on-surface-variant': '#c4c5d7', 'on-secondary': '#002f65', 'surface-tint': '#b7c4ff', 'on-tertiary': '#00287c', 'surface-container-low': '#101c2e', 'surface-dim': '#081326', 'primary': '#b7c4ff', 'primary-fixed': '#dce1ff', 'on-secondary-fixed': '#001b3f', 'error-container': '#93000a', 'tertiary': '#b5c4ff', 'surface-container-highest': '#2a3549', 'inverse-on-surface': '#263144', 'tertiary-fixed': '#dce1ff', 'primary-fixed-dim': '#b7c4ff', 'on-primary-container': '#e5e7ff', 'secondary': '#abc7ff', 'surface-container': '#152032', 'on-tertiary-container': '#e5e8ff', 'inverse-surface': '#d8e3fc', 'secondary-fixed-dim': '#abc7ff', 'surface': '#081326', 'on-secondary-fixed-variant': '#22467e', 'tertiary-fixed-dim': '#b5c4ff', 'tertiary-container': '#2a5ee3', 'background': '#081326', 'on-tertiary-fixed': '#00164e', 'primary-container': '#2e5ce6', 'on-error-container': '#ffdad6' }, borderRadius: { 'DEFAULT': '0.125rem', 'lg': '0.25rem', 'xl': '0.5rem', 'full': '0.75rem' }, spacing: { 'telemetry-panel-width': '22rem', 'sidebar-collapsed': '4.5rem', 'space-lg': '1rem', 'sidebar-width': '16rem', 'gutter-spacious': '1.5rem', 'gutter-default': '1rem', 'space-3xl': '2rem', 'space-xxs': '0.125rem', 'space-xs': '0.25rem', 'space-2xl': '1.5rem', 'space-xl': '1.25rem', 'space-sm': '0.5rem', 'space-md': '0.75rem', 'gutter-compact': '0.75rem', 'space-4xl': '3rem' }, fontFamily: { 'body-sm': ['Inter'], 'label-sm': ['Inter'], 'headline-xl': ['Inter'], 'title-md': ['Inter'], 'headline-lg': ['Inter'], 'metric-display': ['Inter'], 'headline-sm': ['Inter'], 'label-md': ['Inter'], 'headline-md': ['Inter'], 'headline-xl-mobile': ['Inter'], 'metric-mono': ['Inter'], 'body-md': ['Inter'], 'body-lg': ['Inter'] }, fontSize: { 'body-sm': ['12px', { lineHeight: '16px', letterSpacing: '0.01em', fontWeight: '400' }], 'label-sm': ['11px', { lineHeight: '14px', letterSpacing: '0.06em', fontWeight: '600' }], 'headline-xl': ['32px', { lineHeight: '40px', letterSpacing: '-0.02em', fontWeight: '700' }], 'title-md': ['15px', { lineHeight: '22px', letterSpacing: '0em', fontWeight: '500' }], 'headline-lg': ['24px', { lineHeight: '32px', letterSpacing: '-0.015em', fontWeight: '600' }], 'metric-display': ['28px', { lineHeight: '32px', letterSpacing: '-0.02em', fontWeight: '700' }], 'headline-sm': ['16px', { lineHeight: '24px', letterSpacing: '-0.005em', fontWeight: '600' }], 'label-md': ['12px', { lineHeight: '16px', letterSpacing: '0.04em', fontWeight: '600' }], 'headline-md': ['20px', { lineHeight: '28px', letterSpacing: '-0.01em', fontWeight: '600' }], 'headline-xl-mobile': ['26px', { lineHeight: '34px', letterSpacing: '-0.015em', fontWeight: '700' }], 'metric-mono': ['13px', { lineHeight: '16px', letterSpacing: '0.02em', fontWeight: '500' }], 'body-md': ['13px', { lineHeight: '18px', letterSpacing: '0em', fontWeight: '400' }], 'body-lg': ['15px', { lineHeight: '22px', letterSpacing: '0em', fontWeight: '400' }] } } } };</script></head><body class="bg-background font-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 h-full w-sidebar-width bg-surface-container-lowest z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.4)]"><div class="flex flex-col"><div class="h-16 px-space-md flex items-center gap-space-sm bg-surface-container-lowest"><div class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-primary shadow-[0_0_12px_rgba(46,92,230,0.35)]"><span class="material-symbols-outlined text-[20px]">train</span></div><div class="flex flex-col"><span class="font-headline-sm text-headline-sm text-on-surface tracking-tight uppercase">RailRadar</span><span class="font-label-sm text-label-sm text-outline tracking-wider uppercase">Ops Node 01</span></div></div><nav class="flex flex-col gap-space-xxs p-space-sm mt-space-xs" data-active-classes="bg-primary-container text-on-primary-container font-headline-sm shadow-[0_0_12px_rgba(46,92,230,0.35)]"><a class="flex items-center justify-between px-space-md py-space-sm rounded-lg text-on-surface-variant font-title-md text-title-md hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="live-map" href="#"><div class="flex items-center gap-space-md"><span class="material-symbols-outlined text-[18px]">radar</span><span>Live Map</span></div></a><a class="flex items-center justify-between px-space-md py-space-sm rounded-lg text-on-surface-variant font-title-md text-title-md hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="trains" href="#"><div class="flex items-center gap-space-md"><span class="material-symbols-outlined text-[18px]">directions_railway</span><span>Trains</span></div></a><a class="flex items-center justify-between px-space-md py-space-sm rounded-lg text-on-surface-variant font-title-md text-title-md hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="alerts-and-conflicts" href="#"><div class="flex items-center gap-space-md"><span class="material-symbols-outlined text-[18px]">warning</span><span>Alerts &amp; Conflicts</span></div><span class="px-space-xs py-space-xxs rounded-lg bg-error-container text-on-error-container font-label-sm text-label-sm shadow-[0_0_10px_rgba(229,72,77,0.45)]">7</span></a><a class="flex items-center justify-between px-space-md py-space-sm rounded-lg text-on-surface-variant font-title-md text-title-md hover:bg-surface-container-high hover:text-on-surface transition-all" data-path="settings" href="#"><div class="flex items-center gap-space-md"><span class="material-symbols-outlined text-[18px]">settings</span><span>Settings</span></div></a></nav></div><div class="p-space-md m-space-sm rounded-lg bg-surface-container-low"><div class="flex items-start gap-space-sm"><span class="material-symbols-outlined text-primary text-[20px] shrink-0">shield</span><p class="font-label-sm text-label-sm text-outline leading-tight">Indian Railways — Safer Trains, Smarter Operations.</p></div></div></aside><div class="pl-sidebar-width"><header class="fixed top-0 left-sidebar-width right-0 h-16 bg-surface-container-low/95 backdrop-blur-xl z-40 px-space-gutter-default flex items-center justify-between shadow-[0_1px_8px_rgba(0,0,0,0.2)]"><div class="flex items-center gap-space-md"><div class="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary"><span class="material-symbols-outlined text-[24px]">tram</span></div><div class="flex flex-col"><div class="flex items-center gap-space-sm"><span class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-tight">Indian Railways</span><span class="px-space-xs py-space-xxs rounded-lg bg-secondary-container text-on-secondary-container font-label-sm text-label-sm uppercase tracking-wider">Network-Aware ETA &amp; Conflict Engine</span></div><span class="font-body-sm text-body-sm text-outline">Tactical Rail Control Operations Center</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-md py-space-xs rounded-lg bg-surface-container-lowest"><span class="material-symbols-outlined text-primary text-[18px]">schedule</span><span class="font-metric-mono text-metric-mono text-on-surface">12 Dec 2024, 14:32:10</span><span class="font-label-sm text-label-sm text-tertiary px-space-xs py-space-xxs rounded bg-surface-container-high">(4x speed)</span></div><div class="flex items-center gap-space-xs"><button class="flex items-center gap-space-xs px-space-md py-space-xs rounded-lg bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-surface-bright hover:text-on-surface transition-all" type="button"><span class="material-symbols-outlined text-[16px]">pause</span><span>Pause</span></button><button class="flex items-center gap-space-xs px-space-md py-space-xs rounded-lg bg-error-container text-on-error-container font-label-md text-label-md hover:bg-error hover:text-on-error transition-all shadow-[0_0_10px_rgba(229,72,77,0.3)]" type="button"><span class="material-symbols-outlined text-[16px]">restart_alt</span><span>Reset</span></button></div><div class="pl-space-sm"><img alt="Profile" class="w-8 h-8 rounded-full object-cover" src="https://lh3.googleusercontent.com/aida/AEtjO1UAU9-bMDMt5OBDwDbkPuCd-6f6Iqa6u5LyDXq9t8_-KgDMSMYJVmwTkR8wslwlBf4MCcR1DKN3WlOJ7XukHIf9k2P0BDeBCnbafHvwC9YFpNwZhYGtmMRTN9nOszsKmkZ5TciX3QjSQy38ywkKuN8Qj0uvEQ3gBQGolA9cdBXgQpvDVI1Mf9y_ymBi1zewu-STEdwrPxb8MGRH5rrnA374d12-_DMqjDNccqz37xGydrRaK3VFbVZSPOJc7oxnK1MPL1tIrxaC3w"/></div></div></header><main class="relative w-full pt-16 bg-background min-h-screen"><div class="flex flex-col w-full p-space-lg space-y-space-lg">
+<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-space-md pb-space-xs">
+<div class="flex flex-col">
+<div class="flex items-center gap-space-sm">
+<span class="inline-flex items-center justify-center w-2.5 h-2.5 rounded-full bg-error animate-ping"></span>
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Active Network Alerts &amp; Safety Conflicts</h1>
+<span class="px-space-xs py-space-xxs rounded-lg bg-surface-container-high text-primary font-label-sm text-label-sm">LIVE FEED</span>
+</div>
+<p class="font-body-md text-body-md text-outline mt-space-xxs">
+        AI-powered interlocking conflict detection, signal spacing warnings, and sectional bottleneck management across operational divisions.
+      </p>
+</div>
+<div class="flex items-center gap-space-sm flex-wrap">
+<div class="flex items-center bg-surface-container-low px-space-md py-space-xs rounded-lg shadow-sm">
+<span class="material-symbols-outlined text-outline text-[18px] mr-space-xs">tune</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant mr-space-sm">ZONE:</span>
+<select class="bg-transparent text-on-surface font-title-md text-title-md outline-none cursor-pointer pr-space-xs" id="zoneSelect">
+<option class="bg-surface-container text-on-surface" value="all">NCR (North Central Railway)</option>
+<option class="bg-surface-container text-on-surface" value="nr">NR (Northern Railway)</option>
+<option class="bg-surface-container text-on-surface" value="ner">NER (North Eastern)</option>
+<option class="bg-surface-container text-on-surface" value="ecr">ECR (East Central Railway)</option>
+</select>
+</div>
+<div class="flex items-center bg-surface-container-low px-space-md py-space-xs rounded-lg shadow-sm">
+<span class="material-symbols-outlined text-outline text-[18px] mr-space-xs">sort</span>
+<select class="bg-transparent text-on-surface font-title-md text-title-md outline-none cursor-pointer" id="sortSelect">
+<option class="bg-surface-container text-on-surface" value="severity">Sort: Severity Index</option>
+<option class="bg-surface-container text-on-surface" value="eta">Sort: Time to Impact</option>
+<option class="bg-surface-container text-on-surface" value="section">Sort: Section Km</option>
+</select>
+</div>
+<button class="flex items-center gap-space-xs px-space-md py-space-xs rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface font-label-md text-label-md transition-all" id="refreshBtn">
+<span class="material-symbols-outlined text-[16px]">sync</span>
+<span>Re-scan Matrix</span>
+</button>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+<div class="relative overflow-hidden rounded-xl bg-surface-container-low p-space-md shadow-md flex flex-col justify-between group hover:bg-surface-container transition-all">
+<div class="absolute -right-4 -top-4 w-20 h-20 bg-error/10 rounded-full blur-xl pointer-events-none"></div>
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-error uppercase tracking-wider flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-error"></span> Critical Conflicts
+        </span>
+<span class="material-symbols-outlined text-error text-[20px]">warning</span>
+</div>
+<div class="mt-space-md flex items-baseline justify-between">
+<span class="font-metric-display text-metric-display text-on-surface tracking-tight" id="metricCritCount">01</span>
+<span class="font-label-md text-label-md px-space-xs py-space-xxs rounded bg-error-container text-on-error-container shadow-[0_0_12px_rgba(229,72,77,0.45)]">Active</span>
+</div>
+<div class="mt-space-xs flex items-center justify-between text-outline font-label-sm text-label-sm">
+<span>Immediate Interlocking Risk</span>
+<span class="text-error font-metric-mono text-metric-mono">T-14m</span>
+</div>
+</div>
+<div class="relative overflow-hidden rounded-xl bg-surface-container-low p-space-md shadow-md flex flex-col justify-between group hover:bg-surface-container transition-all">
+<div class="absolute -right-4 -top-4 w-20 h-20 bg-secondary-container/30 rounded-full blur-xl pointer-events-none"></div>
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-secondary uppercase tracking-wider flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> High Priority
+        </span>
+<span class="material-symbols-outlined text-secondary text-[20px]">report_problem</span>
+</div>
+<div class="mt-space-md flex items-baseline justify-between">
+<span class="font-metric-display text-metric-display text-on-surface tracking-tight">01</span>
+<span class="font-label-md text-label-md px-space-xs py-space-xxs rounded bg-secondary-container text-on-secondary-container">Active</span>
+</div>
+<div class="mt-space-xs flex items-center justify-between text-outline font-label-sm text-label-sm">
+<span>Signal Block Failure</span>
+<span class="text-secondary font-metric-mono text-metric-mono">+32m Delay</span>
+</div>
+</div>
+<div class="relative overflow-hidden rounded-xl bg-surface-container-low p-space-md shadow-md flex flex-col justify-between group hover:bg-surface-container transition-all">
+<div class="absolute -right-4 -top-4 w-20 h-20 bg-primary/10 rounded-full blur-xl pointer-events-none"></div>
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-primary uppercase tracking-wider flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary"></span> Medium Warnings
+        </span>
+<span class="material-symbols-outlined text-primary text-[20px]">info</span>
+</div>
+<div class="mt-space-md flex items-baseline justify-between">
+<span class="font-metric-display text-metric-display text-on-surface tracking-tight">01</span>
+<span class="font-label-md text-label-md px-space-xs py-space-xxs rounded bg-surface-container-high text-primary">Active</span>
+</div>
+<div class="mt-space-xs flex items-center justify-between text-outline font-label-sm text-label-sm">
+<span>Track Saturation Wave</span>
+<span class="text-primary font-metric-mono text-metric-mono">85% Cap</span>
+</div>
+</div>
+<div class="relative overflow-hidden rounded-xl bg-surface-container-low p-space-md shadow-md flex flex-col justify-between group hover:bg-surface-container transition-all">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span> Resolved Today
+        </span>
+<span class="material-symbols-outlined text-tertiary text-[20px]">check_circle</span>
+</div>
+<div class="mt-space-md flex items-baseline justify-between">
+<span class="font-metric-display text-metric-display text-on-surface tracking-tight" id="metricResolvedCount">14</span>
+<span class="font-label-md text-label-md px-space-xs py-space-xxs rounded bg-surface-container-high text-on-surface-variant">Archived</span>
+</div>
+<div class="mt-space-xs flex items-center justify-between text-outline font-label-sm text-label-sm">
+<span>Dispatched via Loops</span>
+<span class="text-tertiary font-metric-mono text-metric-mono">Avg 4.2m fix</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-space-xs overflow-x-auto pb-space-xxs" id="filterTabs">
+<button class="filter-btn px-space-md py-space-xs rounded-lg font-label-md text-label-md transition-all bg-primary text-on-primary shadow-[0_0_12px_rgba(46,92,230,0.35)]" data-filter="all">
+      All Incidents (4)
+    </button>
+<button class="filter-btn px-space-md py-space-xs rounded-lg font-label-md text-label-md transition-all bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1.5" data-filter="critical">
+<span class="w-2 h-2 rounded-full bg-error"></span> Critical (1)
+    </button>
+<button class="filter-btn px-space-md py-space-xs rounded-lg font-label-md text-label-md transition-all bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1.5" data-filter="high">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> High Priority (1)
+    </button>
+<button class="filter-btn px-space-md py-space-xs rounded-lg font-label-md text-label-md transition-all bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1.5" data-filter="medium">
+<span class="w-2 h-2 rounded-full bg-primary"></span> Medium (1)
+    </button>
+<button class="filter-btn px-space-md py-space-xs rounded-lg font-label-md text-label-md transition-all bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface flex items-center gap-1.5" data-filter="resolved">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span> Resolved (1)
+    </button>
+</div>
+<div class="flex flex-col space-y-space-md" id="cardsContainer">
+<div class="alert-card relative rounded-xl bg-surface-container-low overflow-hidden shadow-xl transition-all" data-severity="critical" id="criticalCard">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-error"></div>
+<div class="p-space-lg pl-space-xl flex flex-col lg:flex-row lg:items-start justify-between gap-space-lg">
+<div class="flex-1 space-y-space-md min-w-0">
+<div class="flex flex-wrap items-center gap-space-sm">
+<span class="flex items-center gap-1.5 px-space-xs py-space-xxs rounded bg-error-container text-on-error-container font-label-sm text-label-sm shadow-[0_0_10px_rgba(229,72,77,0.45)]">
+<span class="w-2 h-2 rounded-full bg-error animate-ping"></span>
+              CRITICAL INTERLOCK CONFLICT
+            </span>
+<span class="font-metric-mono text-metric-mono text-outline">SEC-NCR-42B</span>
+<span class="px-space-xs py-space-xxs rounded bg-surface-container text-secondary font-label-sm text-label-sm">Single Line Block</span>
+<span class="text-outline font-label-sm text-label-sm">Detected 3 mins ago</span>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight flex items-center gap-space-xs flex-wrap">
+              Single Line Convergence Conflict: <span class="text-error font-metric-display text-headline-md">17392</span> vs <span class="text-secondary font-metric-display text-headline-md">56903</span>
+</h2>
+<div class="flex items-center gap-space-xs text-primary font-body-sm text-body-sm mt-space-xxs">
+<span class="material-symbols-outlined text-[16px]">alt_route</span>
+<span>Prayagraj Jn (PRYJ) → Mughalsarai / Pt. Deen Dayal Upadhyaya Jn (DDU) [Section 42B - Km 814.2]</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-space-md rounded-lg space-y-space-xs">
+<div class="flex items-start gap-space-sm">
+<span class="material-symbols-outlined text-error text-[18px] shrink-0 mt-0.5">crisis_alert</span>
+<p class="font-body-md text-body-md text-on-surface">
+                Opposing traffic convergence detected at <span class="text-error font-metric-mono text-metric-mono font-semibold">Km 814.2</span>. Head-on interlock conflict predicted in <span class="text-error font-metric-mono text-metric-mono font-semibold">14 minutes</span> unless siding precedence is executed immediately.
+              </p>
+</div>
+<div class="flex items-start gap-space-sm pt-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">smart_toy</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+<span class="text-primary font-label-sm text-label-sm uppercase tracking-wide">AI Recommendation:</span> 
+                Execute loop siding hold for <strong class="text-on-surface">56903 Passenger</strong> at Chunar Jn (Loop 2); grant non-stop main line clearance to high-priority <strong class="text-on-surface">17392 SBC Express</strong>.
+              </p>
+</div>
+</div>
+<div class="bg-surface-container p-space-md rounded-lg overflow-x-auto">
+<div class="flex items-center justify-between min-w-[540px] text-label-sm font-label-sm text-outline mb-space-xs">
+<span>Prayagraj (Km 780)</span>
+<span class="text-error font-bold tracking-wider">CONVERGENCE ZONE (Km 814.2)</span>
+<span>Chunar Jn (Km 830)</span>
+<span>Mughalsarai (Km 855)</span>
+</div>
+<div class="relative w-full h-8 flex items-center min-w-[540px]">
+<div class="absolute left-0 right-0 h-1 bg-surface-variant rounded"></div>
+<div class="absolute left-1/4 right-1/4 h-1 bg-error/40 rounded"></div>
+<div class="absolute left-[15%] -top-1 flex flex-col items-center">
+<span class="px-space-xs py-0.5 rounded bg-primary-container text-on-primary font-metric-mono text-label-sm shadow-[0_0_8px_rgba(46,92,230,0.4)]">17392 →</span>
+<span class="text-[10px] text-outline mt-0.5">92 km/h</span>
+</div>
+<div class="absolute left-[50%] -translate-x-1/2 flex items-center justify-center">
+<div class="w-6 h-6 rounded-full bg-error-container text-on-error flex items-center justify-center shadow-[0_0_14px_rgba(229,72,77,0.7)] animate-pulse">
+<span class="material-symbols-outlined text-[14px]">close</span>
+</div>
+</div>
+<div class="absolute right-[20%] -top-1 flex flex-col items-center">
+<span class="px-space-xs py-0.5 rounded bg-secondary-container text-on-secondary-container font-metric-mono text-label-sm">← 56903</span>
+<span class="text-[10px] text-outline mt-0.5">45 km/h</span>
+</div>
+<div class="absolute right-[32%] top-5 flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+<span class="text-[10px] text-tertiary font-label-sm">Chunar Loop 2 (Clear)</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex lg:flex-col items-stretch justify-end gap-space-sm shrink-0 w-full lg:w-48 pt-space-xs">
+<button class="flex-1 lg:flex-initial flex items-center justify-center gap-space-xs px-space-md py-space-sm rounded-lg bg-primary-container hover:bg-inverse-primary text-on-primary-container font-headline-sm text-headline-sm transition-all shadow-[0_0_12px_rgba(46,92,230,0.35)]" id="inspectConflictBtn">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+<span>Inspect Conflict</span>
+</button>
+<button class="flex-1 lg:flex-initial flex items-center justify-center gap-space-xs px-space-md py-space-sm rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface font-label-md text-label-md transition-all" id="quickResolveBtn">
+<span class="material-symbols-outlined text-tertiary text-[18px]">check</span>
+<span>Quick Resolve</span>
+</button>
+<div class="hidden lg:flex flex-col bg-surface-container-lowest p-space-sm rounded-lg text-center">
+<span class="text-outline font-label-sm text-label-sm">Projected Delay Penalty</span>
+<span class="text-error font-headline-md text-headline-md font-bold">+28 mins</span>
+<span class="text-on-surface-variant text-[10px]">if manual override fails</span>
+</div>
+</div>
+</div>
+</div>
+<div class="alert-card relative rounded-xl bg-surface-container-low overflow-hidden shadow-md transition-all" data-severity="high">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-secondary"></div>
+<div class="p-space-lg pl-space-xl flex flex-col lg:flex-row lg:items-start justify-between gap-space-md">
+<div class="flex-1 space-y-space-sm min-w-0">
+<div class="flex flex-wrap items-center gap-space-sm">
+<span class="px-space-xs py-space-xxs rounded bg-secondary-container text-on-secondary-container font-label-sm text-label-sm">
+              HIGH PRIORITY DELAY
+            </span>
+<span class="font-metric-mono text-metric-mono text-outline">NCR-AUTO-SIG-08</span>
+<span class="text-outline font-label-sm text-label-sm">Updated 6 mins ago</span>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">
+              Heavy Delay: 12561 Shiv Ganga Express
+            </h2>
+<p class="font-body-md text-body-md text-on-surface mt-space-xxs">
+              Current Delay: <span class="text-secondary font-metric-mono text-metric-mono font-bold">+32 min</span> near Chunar Junction due to automatic signaling block failure (Signal ASP-401 stuck in cautionary aspect).
+            </p>
+</div>
+<div class="flex items-center gap-space-md text-body-sm font-body-sm text-on-surface-variant bg-surface-container-lowest p-space-sm rounded-lg">
+<div class="flex items-center gap-space-xs text-error">
+<span class="material-symbols-outlined text-[16px]">hub</span>
+<span>Cascading Impact:</span>
+</div>
+<span>Follow-on Dedicated Freight Corridor service <strong class="text-on-surface">#FC-902</strong> held at siding outer marker (+18m estimated stall).</span>
+</div>
+</div>
+<div class="flex lg:flex-col items-center justify-end gap-space-sm shrink-0 pt-space-xs">
+<button class="w-full flex items-center justify-center gap-space-xs px-space-md py-space-sm rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface font-label-md text-label-md transition-all">
+<span class="material-symbols-outlined text-[18px]">build</span>
+<span>Signal Bypass</span>
+</button>
+<button class="w-full flex items-center justify-center gap-space-xs px-space-md py-space-sm rounded-lg bg-surface-container-lowest hover:bg-surface-container text-outline hover:text-on-surface font-label-md text-label-md transition-all">
+<span class="material-symbols-outlined text-[18px]">timeline</span>
+<span>Reroute FC-902</span>
+</button>
+</div>
+</div>
+</div>
+<div class="alert-card relative rounded-xl bg-surface-container-low overflow-hidden shadow-md transition-all" data-severity="medium">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-primary"></div>
+<div class="p-space-lg pl-space-xl flex flex-col lg:flex-row lg:items-start justify-between gap-space-md">
+<div class="flex-1 space-y-space-sm min-w-0">
+<div class="flex flex-wrap items-center gap-space-sm">
+<span class="px-space-xs py-space-xxs rounded bg-surface-container-high text-primary font-label-sm text-label-sm">
+              MEDIUM BOTTLENECK
+            </span>
+<span class="font-metric-mono text-metric-mono text-outline">SEC-CNB-PRYJ-01</span>
+<span class="text-outline font-label-sm text-label-sm">Observed across 12 trains</span>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">
+              Sectional Congestion: Kanpur (CNB) → Prayagraj (PRYJ)
+            </h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-space-xxs">
+              Utilization: <span class="text-primary font-metric-mono text-metric-mono font-bold">85%</span>. High-density traffic wave approaching Fatehpur block section. Average speed degraded to 54 km/h against 110 km/h design clearance.
+            </p>
+</div>
+<div class="w-full bg-surface-container-lowest rounded-full h-2 overflow-hidden flex">
+<div class="bg-primary h-full" style="width: 85%"></div>
+<div class="bg-surface-variant h-full" style="width: 15%"></div>
+</div>
+</div>
+<div class="flex lg:flex-col items-center justify-end gap-space-sm shrink-0 pt-space-xs">
+<button class="w-full flex items-center justify-center gap-space-xs px-space-md py-space-sm rounded-lg bg-surface-container-high hover:bg-surface-bright text-on-surface font-label-md text-label-md transition-all">
+<span class="material-symbols-outlined text-[18px]">speed</span>
+<span>Regulate Headway</span>
+</button>
+</div>
+</div>
+</div>
+<div class="alert-card relative rounded-xl bg-surface-container-low overflow-hidden shadow-md opacity-85 hover:opacity-100 transition-all" data-severity="resolved">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-tertiary"></div>
+<div class="p-space-lg pl-space-xl flex flex-col lg:flex-row lg:items-start justify-between gap-space-md">
+<div class="flex-1 space-y-space-sm min-w-0">
+<div class="flex flex-wrap items-center gap-space-sm">
+<span class="px-space-xs py-space-xxs rounded bg-surface-container-high text-tertiary font-label-sm text-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">check</span> RESOLVED
+            </span>
+<span class="font-metric-mono text-metric-mono text-outline">INC-9941</span>
+<span class="text-outline font-label-sm text-label-sm">Logged 18 mins ago</span>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">
+              Conflict Resolved: 22639 vs 68716
+            </h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-space-xxs">
+              Kanpur → Prayagraj | Train 22639 cleared section via Loop 3 | Managed &amp; Confirmed by Operator <span class="text-on-surface font-medium">R. Sharma (Badge #NCR-410)</span>.
+            </p>
+</div>
+</div>
+<div class="flex items-center gap-space-xs text-outline font-label-sm text-label-sm self-center">
+<span class="material-symbols-outlined text-tertiary text-[18px]">verified</span>
+<span>Interlock normal</span>
+</div>
+</div>
+</div>
+</div>
+<div class="fixed inset-0 z-50 flex items-center justify-center p-space-md bg-surface-container-lowest/80 backdrop-blur-md hidden" id="conflictModal">
+<div class="relative w-full max-w-3xl bg-surface-container rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.8)] overflow-hidden">
+<div class="bg-surface-container-high px-space-lg py-space-md flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-error text-[24px]">crisis_alert</span>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface tracking-tight uppercase">AI Interlock Conflict Resolution Console</h3>
+<p class="font-label-sm text-label-sm text-outline">Section 42B Prayagraj-Mughalsarai Single Track Segment</p>
+</div>
+</div>
+<button class="w-8 h-8 rounded-lg bg-surface-container hover:bg-surface-bright flex items-center justify-center text-on-surface transition-all" id="closeModalBtn">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+<div class="p-space-lg space-y-space-lg max-h-[819px] overflow-y-auto">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+<div class="p-space-md rounded-lg bg-surface-container-low space-y-space-sm shadow-sm">
+<div class="flex items-center justify-between">
+<span class="px-space-xs py-space-xxs rounded bg-primary-container text-on-primary-container font-label-sm text-label-sm">TRAIN A (HIGH PRIORITY)</span>
+<span class="text-primary font-metric-mono text-metric-mono font-semibold">Priority Tier 2</span>
+</div>
+<div>
+<span class="font-headline-md text-headline-md text-on-surface">17392 SBC Express</span>
+<p class="font-body-sm text-body-sm text-outline">Superfast Passenger Express</p>
+</div>
+<div class="grid grid-cols-2 gap-space-xs pt-space-xs text-body-sm font-body-sm">
+<div class="bg-surface-container-lowest p-space-xs rounded">
+<span class="text-outline text-[11px] block">Current Speed</span>
+<span class="text-on-surface font-metric-mono text-metric-mono">92 km/h</span>
+</div>
+<div class="bg-surface-container-lowest p-space-xs rounded">
+<span class="text-outline text-[11px] block">Section Status</span>
+<span class="text-primary font-metric-mono text-metric-mono">Approaching Loop</span>
+</div>
+</div>
+</div>
+<div class="p-space-md rounded-lg bg-surface-container-low space-y-space-sm shadow-sm">
+<div class="flex items-center justify-between">
+<span class="px-space-xs py-space-xxs rounded bg-secondary-container text-on-secondary-container font-label-sm text-label-sm">TRAIN B (LOWER PRIORITY)</span>
+<span class="text-secondary font-metric-mono text-metric-mono font-semibold">Priority Tier 4</span>
+</div>
+<div>
+<span class="font-headline-md text-headline-md text-on-surface">56903 Passenger</span>
+<p class="font-body-sm text-body-sm text-outline">Local Slow Passenger</p>
+</div>
+<div class="grid grid-cols-2 gap-space-xs pt-space-xs text-body-sm font-body-sm">
+<div class="bg-surface-container-lowest p-space-xs rounded">
+<span class="text-outline text-[11px] block">Current Speed</span>
+<span class="text-on-surface font-metric-mono text-metric-mono">45 km/h</span>
+</div>
+<div class="bg-surface-container-lowest p-space-xs rounded">
+<span class="text-outline text-[11px] block">Siding Proximity</span>
+<span class="text-secondary font-metric-mono text-metric-mono">1.2 km to Chunar</span>
+</div>
+</div>
+</div>
+</div>
+<div class="p-space-md rounded-lg bg-surface-container-lowest space-y-space-xs">
+<div class="flex items-center justify-between text-body-sm font-body-sm">
+<span class="text-outline">Single Line Critical Section:</span>
+<span class="text-on-surface font-medium">Prayagraj → Mughalsarai (Km 814.2)</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm">
+<span class="text-outline">Simulated Head-on Intersection:</span>
+<span class="text-error font-metric-mono text-metric-mono font-bold">14 min 12 sec</span>
+</div>
+<div class="flex items-center justify-between text-body-sm font-body-sm">
+<span class="text-outline">Loop Siding Allocated:</span>
+<span class="text-tertiary font-medium">Chunar Junction Loop 2 (Clear, 750m length)</span>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-space-md">
+<div class="p-space-md rounded-lg bg-error-container/20 space-y-space-xxs">
+<span class="font-label-sm text-label-sm text-error uppercase">If Unmitigated (Stall at Marker)</span>
+<div class="text-error font-headline-md text-headline-md font-bold">+28 min delay</div>
+<p class="text-outline font-body-sm text-body-sm">Both trains emergency brake on approach; block locked for minimum 45 minutes.</p>
+</div>
+<div class="p-space-md rounded-lg bg-surface-container-high space-y-space-xxs">
+<span class="font-label-sm text-label-sm text-tertiary uppercase">With AI Precedence Execution</span>
+<div class="text-tertiary font-headline-md text-headline-md font-bold">+5 min (56903) | 0 min (17392)</div>
+<p class="text-on-surface-variant font-body-sm text-body-sm">56903 switches to Chunar Loop 2. 17392 speeds through main corridor on schedule.</p>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-high px-space-lg py-space-md flex flex-col sm:flex-row items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-xs text-outline font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[16px] text-tertiary">lock</span>
+<span>Interlock Command Ready for Controller Authorisation</span>
+</div>
+<div class="flex items-center gap-space-xs w-full sm:w-auto">
+<button class="flex-1 sm:flex-initial px-space-md py-space-sm rounded-lg bg-surface-container hover:bg-surface-bright text-on-surface font-label-md text-label-md transition-all" id="cancelModalBtn">
+            Dismiss
+          </button>
+<button class="flex-1 sm:flex-initial flex items-center justify-center gap-space-xs px-space-lg py-space-sm rounded-lg bg-primary-container hover:bg-inverse-primary text-on-primary-container font-headline-sm text-headline-sm transition-all shadow-[0_0_16px_rgba(46,92,230,0.45)]" id="executePrecedenceBtn">
+<span class="material-symbols-outlined text-[18px]">verified</span>
+<span>Execute Precedence &amp; Resolve Conflict</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<div class="fixed bottom-6 right-6 z-50 flex items-center gap-space-md p-space-md rounded-xl bg-surface-container-high shadow-2xl transition-all transform translate-y-24 opacity-0 pointer-events-none" id="toastNotification">
+<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center text-on-primary shrink-0">
+<span class="material-symbols-outlined text-[20px]">check_circle</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface">Conflict Successfully Resolved</span>
+<span class="font-body-sm text-body-sm text-outline">Precedence dispatched to Chunar Jn Interlocking Unit.</span>
+</div>
+</div>
+</div>
+<script>
+  (function() {
+    const inspectBtn = document.getElementById('inspectConflictBtn');
+    const quickResolveBtn = document.getElementById('quickResolveBtn');
+    const modal = document.getElementById('conflictModal');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const cancelModalBtn = document.getElementById('cancelModalBtn');
+    const executeBtn = document.getElementById('executePrecedenceBtn');
+    const criticalCard = document.getElementById('criticalCard');
+    const metricCrit = document.getElementById('metricCritCount');
+    const metricRes = document.getElementById('metricResolvedCount');
+    const toast = document.getElementById('toastNotification');
+
+    function openModal() {
+      modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+      modal.classList.add('hidden');
+    }
+
+    function showToast() {
+      toast.classList.remove('translate-y-24', 'opacity-0', 'pointer-events-none');
+      toast.classList.add('translate-y-0', 'opacity-100');
+      setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-24', 'opacity-0', 'pointer-events-none');
+      }, 4000);
+    }
+
+    function applyResolution() {
+      closeModal();
+      
+      criticalCard.classList.remove('shadow-xl');
+      criticalCard.classList.add('opacity-90', 'hover:opacity-100');
+      criticalCard.setAttribute('data-severity', 'resolved');
+
+      const sideBar = criticalCard.querySelector('.bg-error');
+      if (sideBar) {
+        sideBar.classList.remove('bg-error');
+        sideBar.classList.add('bg-tertiary');
+      }
+
+      criticalCard.innerHTML = `
+        <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-tertiary"></div>
+        <div class="p-space-lg pl-space-xl flex flex-col lg:flex-row lg:items-start justify-between gap-space-md">
+          <div class="flex-1 space-y-space-sm min-w-0">
+            <div class="flex flex-wrap items-center gap-space-sm">
+              <span class="px-space-xs py-space-xxs rounded bg-surface-container-high text-tertiary font-label-sm text-label-sm flex items-center gap-1">
+                <span class="material-symbols-outlined text-[14px]">check_circle</span> RESOLVED BY OPERATOR
+              </span>
+              <span class="font-metric-mono text-metric-mono text-outline">SEC-NCR-42B</span>
+              <span class="text-tertiary font-label-sm text-label-sm">Loop Precedence Active</span>
+            </div>
+            <div>
+              <h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">
+                Single Line Convergence Resolved: 17392 vs 56903
+              </h2>
+              <p class="font-body-md text-body-md text-on-surface-variant mt-space-xxs">
+                56903 held safely at Chunar Jn Loop 2 siding (+5m delay). 17392 SBC Express granted clear main track through Km 814.2 on original schedule.
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-space-xs text-tertiary font-label-md text-label-md shrink-0 self-center">
+            <span class="material-symbols-outlined text-[18px]">verified</span>
+            <span>Interlocking Precedence Enforced</span>
+          </div>
+        </div>
+      `;
+
+      metricCrit.textContent = '00';
+      metricRes.textContent = '15';
+
+      const critTab = document.querySelector('[data-filter="critical"]');
+      if (critTab) {
+        critTab.innerHTML = '<span class="w-2 h-2 rounded-full bg-error"></span> Critical (0)';
+      }
+      const resTab = document.querySelector('[data-filter="resolved"]');
+      if (resTab) {
+        resTab.innerHTML = '<span class="w-2 h-2 rounded-full bg-tertiary"></span> Resolved (2)';
+      }
+
+      showToast();
+    }
+
+    if (inspectBtn) inspectBtn.addEventListener('click', openModal);
+    if (quickResolveBtn) quickResolveBtn.addEventListener('click', applyResolution);
+    if (closeModalBtn) closeModalBtn.addEventListener('click', closeModal);
+    if (cancelModalBtn) cancelModalBtn.addEventListener('click', closeModal);
+    if (executeBtn) executeBtn.addEventListener('click', applyResolution);
+
+    const filterBtns = document.querySelectorAll('.filter-btn');
+    const cards = document.querySelectorAll('.alert-card');
+
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach(b => {
+          b.classList.remove('bg-primary', 'text-on-primary', 'shadow-[0_0_12px_rgba(46,92,230,0.35)]');
+          b.classList.add('bg-surface-container-low', 'text-on-surface-variant');
+        });
+        btn.classList.remove('bg-surface-container-low', 'text-on-surface-variant');
+        btn.classList.add('bg-primary', 'text-on-primary', 'shadow-[0_0_12px_rgba(46,92,230,0.35)]');
+
+        const filter = btn.getAttribute('data-filter');
+        cards.forEach(card => {
+          const cardSev = card.getAttribute('data-severity');
+          if (filter === 'all' || cardSev === filter) {
+            card.style.display = 'block';
+          } else {
+            card.style.display = 'none';
+          }
+        });
+      });
+    });
+
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => {
+        refreshBtn.classList.add('animate-pulse');
+        setTimeout(() => {
+          refreshBtn.classList.remove('animate-pulse');
+        }, 600);
+      });
+    }
+  })();
+</script></main></div></body></html>

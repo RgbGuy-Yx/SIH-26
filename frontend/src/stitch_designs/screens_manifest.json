@@ -1,0 +1,46 @@
+[
+  {
+    "title": "RailRadar \u2014 Settings",
+    "id": "348601160a00467ab7e707f1ddaea7a3",
+    "safe_name": "railradar_settings",
+    "screenshot_path": "C:/Users/iliyaz/.gemini/antigravity-ide/brain/6045d13c-9f57-4de5-b2d5-68e2c4d9af58\\stitch_assets\\screenshots\\railradar_settings.png",
+    "code_path": "C:/Users/iliyaz/.gemini/antigravity-ide/brain/6045d13c-9f57-4de5-b2d5-68e2c4d9af58\\stitch_assets\\code\\railradar_settings.html",
+    "img_success": true,
+    "code_success": true,
+    "width": "2560",
+    "height": "2408"
+  },
+  {
+    "title": "RailRadar \u2014 Trains",
+    "id": "453c400672804e87bae98c28dfeb1ce9",
+    "safe_name": "railradar_trains",
+    "screenshot_path": "C:/Users/iliyaz/.gemini/antigravity-ide/brain/6045d13c-9f57-4de5-b2d5-68e2c4d9af58\\stitch_assets\\screenshots\\railradar_trains.png",
+    "code_path": "C:/Users/iliyaz/.gemini/antigravity-ide/brain/6045d13c-9f57-4de5-b2d5-68e2c4d9af58\\stitch_assets\\code\\railradar_trains.html",
+    "img_success": true,
+    "code_success": true,
+    "width": "2560",
+    "height": "2630"
+  },
+  {
+    "title": "RailRadar \u2014 Alerts & Conflicts",
+    "id": "9ada68024bf446ebaf6b9cf290b50dc3",
+    "safe_name": "railradar_alerts_and_conflicts",
+    "screenshot_path": "C:/Users/iliyaz/.gemini/antigravity-ide/brain/6045d13c-9f57-4de5-b2d5-68e2c4d9af58\\stitch_assets\\screenshots\\railradar_alerts_and_conflicts.png",
+    "code_path": "C:/Users/iliyaz/.gemini/antigravity-ide/brain/6045d13c-9f57-4de5-b2d5-68e2c4d9af58\\stitch_assets\\code\\railradar_alerts_and_conflicts.html",
+    "img_success": true,
+    "code_success": true,
+    "width": "2560",
+    "height": "2172"
+  },
+  {
+    "title": "RailRadar \u2014 Live Map",
+    "id": "cbcaae534a7b4a3bb38ecaca372a46e2",
+    "safe_name": "railradar_live_map",
+    "screenshot_path": "C:/Users/iliyaz/.gemini/antigravity-ide/brain/6045d13c-9f57-4de5-b2d5-68e2c4d9af58\\stitch_assets\\screenshots\\railradar_live_map.png",
+    "code_path": "C:/Users/iliyaz/.gemini/antigravity-ide/brain/6045d13c-9f57-4de5-b2d5-68e2c4d9af58\\stitch_assets\\code\\railradar_live_map.html",
+    "img_success": true,
+    "code_success": true,
+    "width": "2560",
+    "height": "2256"
+  }
+]

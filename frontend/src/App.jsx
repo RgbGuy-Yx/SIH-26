@@ -1,24 +1,70 @@
-import React from 'react'
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import DashboardLayout from './layouts/DashboardLayout';
+import UserLayout from './layouts/UserLayout';
+import LiveMapPage from './pages/LiveMapPage';
+import TrainsPage from './pages/TrainsPage';
+import AlertsConflictsPage from './pages/AlertsConflictsPage';
+import SettingsPage from './pages/SettingsPage';
+import LoginPage from './pages/LoginPage';
+import { UserDashboardPage } from './pages/UserDashboardPage';
+
+// Guard for protected Control Room routes
+function ProtectedRoute({ children }) {
+  const { currentUser } = useAuth();
+  const location = useLocation();
+
+  if (!currentUser) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return children;
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      {/* Public Login Route */}
+      <Route path="/login" element={<LoginPage />} />
+
+      {/* ===== Passenger View (Public, Static) ===== */}
+      <Route path="/user-dashboard" element={<UserLayout />}>
+        <Route index element={<UserDashboardPage />} />
+      </Route>
+
+      {/* Railway Control Room Protected Layout & Routes */}
+      <Route
+        path="/control-room"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<LiveMapPage />} />
+        <Route path="trains" element={<TrainsPage />} />
+        <Route path="alerts-and-conflicts" element={<AlertsConflictsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+      </Route>
+
+      {/* Default: redirect root to passenger dashboard */}
+      <Route path="/" element={<Navigate to="/user-dashboard" replace />} />
+
+      {/* Catch-all Fallback */}
+      <Route path="*" element={<Navigate to="/user-dashboard" replace />} />
+    </Routes>
+  );
+}
 
 function App() {
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100">
-      <div className="max-w-xl w-full bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl text-center space-y-4">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-600/20 text-blue-400 mb-2">
-          🚆
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white">
-          Indian Railways ETA Engine
-        </h1>
-        <p className="text-slate-400 text-sm">
-          Real-Time Network-Aware ETA Forecasting & Conflict Resolution Engine
-        </p>
-        <div className="inline-block px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 text-xs font-medium">
-          Foundation Setup Ready
-        </div>
-      </div>
-    </div>
-  )
+    <AuthProvider>
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
+    </AuthProvider>
+  );
 }
 
-export default App
+export default App;
