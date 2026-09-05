@@ -1,13 +1,15 @@
 """
-Unified Master Test Runner for Phase 2A and Phase 2C Intelligence Pipeline.
+Master Unified Test Runner for Phase 2A, Phase 2C, Phase 3A, and Phase 3B Railway Intelligence Pipeline.
 Executes test suites and writes detailed output to test_results.log.
 """
 
 import sys
 import os
 import traceback
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
+from fastapi.testclient import TestClient
 
 # Add backend to sys.path
 backend_dir = Path(__file__).resolve().parent.parent
@@ -34,12 +36,20 @@ from app.ml.eta_calculator import calculate_station_eta, calculate_section_trans
 from app.graph.schemas import TrackType, TrackSection, StationNode, SectionOccupancy, PipelineStepResult
 from app.graph.railway_graph import RailwayGraph
 from app.graph.conflict_engine import ConflictEngine
+from app.graph.dataset_loader import load_national_railway_graph, get_available_trains, get_train_timetable
 from app.services.pipeline_service import ETAPipelineService
+from app.simulation.schemas import TrainStatus, TrainSimulationState, SimulationConfig, SimulationSnapshot
+from app.simulation.clock import VirtualClock
+from app.simulation.train_entity import TrainEntity
+from app.simulation.engine import SimulationEngine
+from app.main import app
 
+# Phase 2A Tests
 from tests.test_ml_inference import (
     test_model_loading_and_singleton,
     test_feature_schema_loading_and_ordering,
     test_feature_dataframe_structure,
+    test_feature_numpy_structure,
     test_valid_ml_prediction,
     test_fallback_on_none_weather,
     test_fallback_on_incomplete_weather,
@@ -53,12 +63,58 @@ from tests.test_ml_inference import (
     test_section_transit_time_time_recovery,
     test_predict_and_calculate_eta_orchestrator,
 )
+
+# Phase 2C Tests
 from tests.test_phase2c_integration import (
     test_1_train_a_to_b_no_conflict,
     test_2_single_line_section_conflict_resolution,
     test_3_multi_hop_a_to_b_to_c_delay_propagation,
     test_4_missing_weather_fallback_in_pipeline,
     test_5_deterministic_priority_precedence_hierarchy,
+)
+
+# Phase 3A Tests
+from tests.test_phase3a_simulation import (
+    test_1_dataset_train_loading,
+    test_2_timetable_extraction,
+    test_3_route_construction,
+    test_4_station_coordinate_loading,
+    test_5_virtual_clock_ticking,
+    test_6_clock_controls,
+    test_7_train_position_interpolation,
+    test_8_station_to_station_transition,
+    test_9_multiple_trains_simultaneous,
+    test_10_simulation_ml_integration,
+    test_11_simulation_delay_propagation,
+    test_12_simulation_networkx_conflict,
+    test_13_simulation_priority_resolution,
+    test_14_simulation_eta_update,
+    test_15_simulation_deterministic_replay,
+    test_16_simulation_error_handling,
+)
+
+# Phase 3B Tests
+from tests.test_phase3b_api import (
+    test_01_health_endpoint,
+    test_02_system_data_mode_endpoint,
+    test_03_simulation_start,
+    test_04_simulation_pause,
+    test_05_simulation_resume,
+    test_06_simulation_speed,
+    test_07_simulation_step,
+    test_08_simulation_reset,
+    test_09_simulation_state,
+    test_10_get_all_trains,
+    test_11_get_single_train_found,
+    test_12_get_single_train_not_found,
+    test_13_get_train_eta,
+    test_14_get_train_conflicts,
+    test_15_get_train_live_status,
+    test_16_cache_hit_behavior,
+    test_17_request_deduplication_coalescing,
+    test_18_stale_fallback_on_api_error,
+    test_19_websocket_telemetry_stream,
+    test_20_decoupled_integrity,
 )
 
 
@@ -81,6 +137,7 @@ def run_all():
         ("Model Loading & Singleton", test_model_loading_and_singleton),
         ("Feature Schema & Exact Ordering", test_feature_schema_loading_and_ordering),
         ("Feature DataFrame Construction", test_feature_dataframe_structure),
+        ("Feature NumPy Vector Construction", test_feature_numpy_structure),
         ("Valid ML Inference (XGBoost)", test_valid_ml_prediction),
         ("Fallback on Missing Weather (None)", test_fallback_on_none_weather),
         ("Fallback on Incomplete Weather", test_fallback_on_incomplete_weather),
@@ -95,9 +152,7 @@ def run_all():
         ("End-to-End Predict & ETA Orchestrator", test_predict_and_calculate_eta_orchestrator),
     ]
 
-    passed_2a = 0
-    failed_2a = 0
-
+    passed_2a, failed_2a = 0, 0
     for name, test_fn in phase2a_tests:
         try:
             test_fn()
@@ -121,16 +176,10 @@ def run_all():
 
     def run_2c_test(name, fn):
         service = ETAPipelineService()
-        if fn == test_1_train_a_to_b_no_conflict:
-            fn(service, clear_w)
-        elif fn == test_2_single_line_section_conflict_resolution:
-            fn(service, clear_w)
-        elif fn == test_3_multi_hop_a_to_b_to_c_delay_propagation:
+        if fn in (test_1_train_a_to_b_no_conflict, test_2_single_line_section_conflict_resolution, test_3_multi_hop_a_to_b_to_c_delay_propagation, test_5_deterministic_priority_precedence_hierarchy):
             fn(service, clear_w)
         elif fn == test_4_missing_weather_fallback_in_pipeline:
             fn(service)
-        elif fn == test_5_deterministic_priority_precedence_hierarchy:
-            fn(service, clear_w)
 
     phase2c_tests = [
         ("TEST 1: Train A -> B with No Conflict", test_1_train_a_to_b_no_conflict),
@@ -140,9 +189,7 @@ def run_all():
         ("TEST 5: Deterministic Priority Precedence Hierarchy (Tiers 1-4)", test_5_deterministic_priority_precedence_hierarchy),
     ]
 
-    passed_2c = 0
-    failed_2c = 0
-
+    passed_2c, failed_2c = 0, 0
     for name, test_fn in phase2c_tests:
         try:
             run_2c_test(name, test_fn)
@@ -153,106 +200,98 @@ def run_all():
             out_lines.append(traceback.format_exc())
             failed_2c += 1
 
-    total_passed = passed_2a + passed_2c
-    total_failed = failed_2a + failed_2c
-    total_tests = len(phase2a_tests) + len(phase2c_tests)
-
-    log("\n" + "-" * 80)
-    log(f"TOTAL TEST SUMMARY: {total_passed} PASSED, {total_failed} FAILED (Total: {total_tests})")
-    log(f"  - Phase 2A Tests: {passed_2a}/{len(phase2a_tests)} Passed")
-    log(f"  - Phase 2C Tests: {passed_2c}/{len(phase2c_tests)} Passed")
-    log("-" * 80)
-
     # =========================================================================
-    # 3. LIVE PHASE 2C DEMONSTRATION: MULTI-HOP A -> B -> C JOURNEY
+    # 3. PHASE 3A SIMULATION TESTS
     # =========================================================================
     log("\n" + "=" * 80)
-    log("PHASE 2C: LIVE END-TO-END SYSTEM DEMONSTRATION (A -> B -> C)")
+    log("PHASE 3A: DETERMINISTIC TRAIN SIMULATION ENGINE TEST SUITE")
     log("=" * 80)
 
-    demo_service = ETAPipelineService()
+    phase3a_tests = [
+        ("TEST 1: Dynamic Dataset Train Loading", test_1_dataset_train_loading),
+        ("TEST 2: Timetable Extraction & Stop Parsing", test_2_timetable_extraction),
+        ("TEST 3: Route Construction & Sequence Verification", test_3_route_construction),
+        ("TEST 4: Station Coordinate Validation (Lat/Lon)", test_4_station_coordinate_loading),
+        ("TEST 5: Deterministic Virtual Clock Ticking", test_5_virtual_clock_ticking),
+        ("TEST 6: Virtual Clock Controls (Start/Pause/Resume/Reset)", test_6_clock_controls),
+        ("TEST 7: Geometric Section Position Interpolation", test_7_train_position_interpolation),
+        ("TEST 8: Station-to-Station Transition Progression", test_8_station_to_station_transition),
+        ("TEST 9: Multi-Train Simultaneous Simulation", test_9_multiple_trains_simultaneous),
+        ("TEST 10: Simulation XGBoost ML Integration (8 Features)", test_10_simulation_ml_integration),
+        ("TEST 11: Lag-1 Delay Propagation Across Simulation Hops", test_11_simulation_delay_propagation),
+        ("TEST 12: NetworkX Conflict Engine Integration", test_12_simulation_networkx_conflict),
+        ("TEST 13: Priority Precedence Arbitration (Tiers 1-4)", test_13_simulation_priority_resolution),
+        ("TEST 14: Dynamic Final ETA Recalculation", test_14_simulation_eta_update),
+        ("TEST 15: Deterministic Simulation Replay Consistency", test_15_simulation_deterministic_replay),
+        ("TEST 16: Missing / Invalid Data Graceful Handling", test_16_simulation_error_handling),
+    ]
 
-    # Pre-register a competing train on section B -> C to demonstrate dynamic conflict resolution
-    t_comp_dept = datetime(2026, 8, 28, 7, 30, 0)
-    t_comp_arr = datetime(2026, 8, 28, 8, 20, 0)
-    demo_service.conflict_engine.register_occupancy(
-        SectionOccupancy(
-            train_id="54301",
-            section_id="SEC-B-C",
-            station_from="STN_B",
-            station_to="STN_C",
-            entry_time=t_comp_dept,
-            exit_time=t_comp_arr,
-            priority_tier=PriorityTier.TIER_4_FREIGHT_SPECIAL,
-        )
-    )
+    passed_3a, failed_3a = 0, 0
+    for name, test_fn in phase3a_tests:
+        try:
+            test_fn()
+            log(f"[PASS] {name}")
+            passed_3a += 1
+        except Exception as exc:
+            log(f"[FAIL] {name}: {exc}")
+            out_lines.append(traceback.format_exc())
+            failed_3a += 1
 
-    # Train: 12003 Swarna Shatabdi (Tier 1 Premium)
-    # Hop 1: STN_A -> STN_B (06:00 -> 06:45)
-    # Hop 2: STN_B -> STN_C (06:55 -> 07:45)
-    t_a_dept = datetime(2026, 8, 28, 6, 0, 0)
-    t_b_arr = datetime(2026, 8, 28, 6, 45, 0)
-    t_b_dept = datetime(2026, 8, 28, 6, 55, 0)
-    t_c_arr = datetime(2026, 8, 28, 7, 45, 0)
-
-    weather_hop1 = WeatherInput(
-        is_foggy=0.0, avg_temperature=26.0, total_precipitation=0.0, avg_wind_speed=10.0, avg_cloud_cover=20.0
-    )
-    weather_hop2 = WeatherInput(
-        is_foggy=1.0, avg_temperature=11.0, total_precipitation=1.2, avg_wind_speed=14.0, avg_cloud_cover=90.0
-    )
-
-    log("\n[SETUP]")
-    log("  Train:                 12003 Swarna Shatabdi (Priority Tier 1: Premium)")
-    log("  Route:                 Station A -> Station B -> Station C")
-    log("  Initial Origin Delay:  10.0 mins (Departed Station A at 06:10:00)")
-    log("  Network Conditions:    Section A-B (Double Line), Section B-C (Single Line Bottleneck)")
-
-    # Execute Multi-Hop Journey
-    journey_results = demo_service.simulate_multi_hop_journey(
-        train_id="12003",
-        train_name="Swarna Shatabdi",
-        priority_tier=PriorityTier.TIER_1_PREMIUM,
-        route_stations=["STN_A", "STN_B", "STN_C"],
-        timetable=[(t_a_dept, t_b_arr), (t_b_dept, t_c_arr)],
-        initial_origin_delay_minutes=10.0,
-        weather_per_hop=[weather_hop1, weather_hop2],
-    )
-
-    step_ab = journey_results[0]
-    step_bc = journey_results[1]
-
-    log("\n" + "-" * 40)
-    log("[HOP 1: Station A -> Station B]")
-    log("-" * 40)
-    log(f"  - From Station:                 {step_ab.from_station_id}")
-    log(f"  - To Station:                   {step_ab.to_station_id}")
-    log(f"  - Scheduled Timetable:          {step_ab.scheduled_departure_from.strftime('%H:%M')} -> {step_ab.scheduled_arrival_to.strftime('%H:%M')} (Runtime: {step_ab.scheduled_section_runtime_minutes:.1f} mins)")
-    log(f"  - Input Delay (Lag-1 at A):     {step_ab.previous_delay_minutes:.2f} mins")
-    log(f"  - ML Model Predicted Delay (B): {step_ab.ml_predicted_delay_minutes:.2f} mins (Fallback: {step_ab.is_fallback})")
-    log(f"  - NetworkX Conflict Delay:      {step_ab.conflict_delay_minutes:.2f} mins")
-    log(f"  - Total Delay at Station B:     {step_ab.total_final_delay_minutes:.2f} mins")
-    log(f"  - Calculated Final ETA (B):     {step_ab.predicted_arrival_eta.strftime('%Y-%m-%d %H:%M:%S')}")
-    log(f"  - Derived Section Transit Time: {step_ab.derived_section_transit_minutes:.2f} mins")
-    log(f"  - Conflict Status:              {step_ab.conflict_details.resolution_reason}")
-
-    log("\n" + "-" * 40)
-    log("[HOP 2: Station B -> Station C (Propagation Verification)]")
-    log("-" * 40)
-    log(f"  - From Station:                 {step_bc.from_station_id}")
-    log(f"  - To Station:                   {step_bc.to_station_id}")
-    log(f"  - Scheduled Timetable:          {step_bc.scheduled_departure_from.strftime('%H:%M')} -> {step_bc.scheduled_arrival_to.strftime('%H:%M')} (Runtime: {step_bc.scheduled_section_runtime_minutes:.1f} mins)")
-    log(f"  - Input Delay (Fed from B):     {step_bc.previous_delay_minutes:.2f} mins  <-- (Exact match with Hop 1 output!)")
-    log(f"  - Adverse Weather Fed:          Foggy (1.0), Temp 11°C, Rain 1.2mm")
-    log(f"  - ML Model Predicted Delay (C): {step_bc.ml_predicted_delay_minutes:.2f} mins (Fallback: {step_bc.is_fallback})")
-    log(f"  - NetworkX Conflict Delay:      {step_bc.conflict_delay_minutes:.2f} mins")
-    log(f"  - Total Delay at Station C:     {step_bc.total_final_delay_minutes:.2f} mins")
-    log(f"  - Calculated Final ETA (C):     {step_bc.predicted_arrival_eta.strftime('%Y-%m-%d %H:%M:%S')}")
-    log(f"  - Derived Section Transit Time: {step_bc.derived_section_transit_minutes:.2f} mins")
-    log(f"  - Conflict Resolution:          {step_bc.conflict_details.resolution_reason}")
+    # =========================================================================
+    # 4. PHASE 3B REST API, WEBSOCKET & RESILIENCE TESTS
+    # =========================================================================
+    log("\n" + "=" * 80)
+    log("PHASE 3B: REST API, WEBSOCKET STREAMING & LIVE PROVIDER TEST SUITE")
     log("=" * 80)
 
-    # Write log to file
+    client = TestClient(app)
+    phase3b_tests = [
+        ("TEST 1: Health Check Endpoint (GET /api/health)", lambda: test_01_health_endpoint(client)),
+        ("TEST 2: System Data Mode (GET /api/system/data-mode)", lambda: test_02_system_data_mode_endpoint(client)),
+        ("TEST 3: Simulation Clock Start (POST /api/simulation/start)", lambda: test_03_simulation_start(client)),
+        ("TEST 4: Simulation Clock Pause (POST /api/simulation/pause)", lambda: test_04_simulation_pause(client)),
+        ("TEST 5: Simulation Clock Resume (POST /api/simulation/resume)", lambda: test_05_simulation_resume(client)),
+        ("TEST 6: Simulation Speed Multiplier (POST /api/simulation/speed)", lambda: test_06_simulation_speed(client)),
+        ("TEST 7: Simulation Deterministic Step (POST /api/simulation/step)", lambda: test_07_simulation_step(client)),
+        ("TEST 8: Simulation State Reset (POST /api/simulation/reset)", lambda: test_08_simulation_reset(client)),
+        ("TEST 9: Full Simulation Snapshot (GET /api/simulation/state)", lambda: test_09_simulation_state(client)),
+        ("TEST 10: Multi-Train Summary List (GET /api/trains)", lambda: test_10_get_all_trains(client)),
+        ("TEST 11: Single Train Detailed Telemetry (GET /api/trains/{trainNo})", lambda: test_11_get_single_train_found(client)),
+        ("TEST 12: Train Not Found 404 Handling", lambda: test_12_get_single_train_not_found(client)),
+        ("TEST 13: Train Next-Station ETA & ML Delay (GET /api/trains/{trainNo}/eta)", lambda: test_13_get_train_eta(client)),
+        ("TEST 14: Train Active Conflict Diagnostics (GET /api/trains/{trainNo}/conflicts)", lambda: test_14_get_train_conflicts(client)),
+        ("TEST 15: Decoupled Live Status Query (GET /api/trains/{trainNo}/live-status)", lambda: test_15_get_train_live_status(client)),
+        ("TEST 16: In-Memory TTL Cache Hit Behavior", lambda: asyncio.run(test_16_cache_hit_behavior())),
+        ("TEST 17: Request Deduplication & In-Flight Coalescing", lambda: asyncio.run(test_17_request_deduplication_coalescing())),
+        ("TEST 18: Provider Error Resilience & Stale Fallback", lambda: asyncio.run(test_18_stale_fallback_on_api_error())),
+        ("TEST 19: WebSocket Handshake & Telemetry Stream (/ws)", lambda: test_19_websocket_telemetry_stream(client)),
+        ("TEST 20: Decoupled Simulation Continuity Across External API Failure", lambda: test_20_decoupled_integrity(client)),
+    ]
+
+    passed_3b, failed_3b = 0, 0
+    for name, test_fn in phase3b_tests:
+        try:
+            test_fn()
+            log(f"[PASS] {name}")
+            passed_3b += 1
+        except Exception as exc:
+            log(f"[FAIL] {name}: {exc}")
+            out_lines.append(traceback.format_exc())
+            failed_3b += 1
+
+    total_passed = passed_2a + passed_2c + passed_3a + passed_3b
+    total_failed = failed_2a + failed_2c + failed_3a + failed_3b
+    total_tests = len(phase2a_tests) + len(phase2c_tests) + len(phase3a_tests) + len(phase3b_tests)
+
+    log("\n" + "-" * 80)
+    log(f"MASTER TEST SUMMARY: {total_passed} PASSED, {total_failed} FAILED (Total: {total_tests})")
+    log(f"  - Phase 2A (ML Inference):       {passed_2a}/{len(phase2a_tests)} Passed")
+    log(f"  - Phase 2C (Pipeline & Graph):   {passed_2c}/{len(phase2c_tests)} Passed")
+    log(f"  - Phase 3A (Simulation Engine):  {passed_3a}/{len(phase3a_tests)} Passed")
+    log(f"  - Phase 3B (API, WS & Live):     {passed_3b}/{len(phase3b_tests)} Passed")
+    log("-" * 80)
+
+    # Write full log file
     with open(log_path, "w", encoding="utf-8") as f:
         f.write("\n".join(out_lines) + "\n")
 

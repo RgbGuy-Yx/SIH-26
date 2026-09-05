@@ -102,3 +102,30 @@ def build_feature_dataframe(input_data: StationInferenceInput) -> pd.DataFrame:
     ordered_data = {col: [feature_dict[col]] for col in expected_order}
     df = pd.DataFrame(ordered_data)
     return df
+
+
+def build_feature_numpy(input_data: StationInferenceInput) -> np.ndarray:
+    """
+    Construct a high-performance 2D numpy array of shape (1, 8) with dtype float32
+    matching the exact schema and column ordering of the trained XGBoost model.
+    Eliminates DataFrame construction overhead during high-frequency simulation loops.
+    """
+    is_valid_weather, reason = validate_weather_data(input_data.weather)
+    if not is_valid_weather:
+        raise ValueError(f"Cannot build feature vector: {reason}")
+
+    w = input_data.weather
+    # Canonical order:
+    # ['hour_of_day', 'current_accumulated_delay', 'priority_tier', 'is_foggy',
+    #  'avg_temperature', 'total_precipitation', 'avg_wind_speed', 'avg_cloud_cover']
+    return np.array([[
+        float(input_data.hour_of_day),
+        float(input_data.current_accumulated_delay),
+        float(int(input_data.priority_tier)),
+        float(w.is_foggy),
+        float(w.avg_temperature),
+        float(w.total_precipitation),
+        float(w.avg_wind_speed),
+        float(w.avg_cloud_cover),
+    ]], dtype=np.float32)
+

@@ -21,6 +21,7 @@ from app.ml.feature_builder import (
     validate_weather_data,
     build_feature_dict,
     build_feature_dataframe,
+    build_feature_numpy,
 )
 from app.ml.predictor import predict_delay, predict_and_calculate_eta
 from app.ml.eta_calculator import calculate_station_eta, calculate_section_transit_time
@@ -107,6 +108,37 @@ def test_feature_dataframe_structure():
     assert df.iloc[0]["total_precipitation"] == 4.2
     assert df.iloc[0]["avg_wind_speed"] == 15.0
     assert df.iloc[0]["avg_cloud_cover"] == 80.0
+
+
+def test_feature_numpy_structure():
+    """Verify built NumPy array matches canonical feature order, shape (1, 8), and float32 dtype."""
+    weather = WeatherInput(
+        is_foggy=1.0,
+        avg_temperature=12.5,
+        total_precipitation=4.2,
+        avg_wind_speed=15.0,
+        avg_cloud_cover=80.0
+    )
+    input_data = StationInferenceInput(
+        hour_of_day=8,
+        current_accumulated_delay=15.0,
+        priority_tier=PriorityTier.TIER_1_PREMIUM,
+        weather=weather,
+        is_origin=False
+    )
+
+    arr = build_feature_numpy(input_data)
+    assert arr.shape == (1, 8)
+    assert arr.dtype.name == "float32"
+    assert arr[0, 0] == 8.0
+    assert arr[0, 1] == 15.0
+    assert arr[0, 2] == 1.0
+    assert arr[0, 3] == 1.0
+    assert arr[0, 4] == 12.5
+    assert arr[0, 5] == 4.2
+    assert arr[0, 6] == 15.0
+    assert arr[0, 7] == 80.0
+
 
 
 # ============================================================================

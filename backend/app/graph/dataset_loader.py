@@ -225,16 +225,22 @@ def get_train_timetable(train_no: int, csv_path: Optional[str] = None) -> List[D
         if (pd.isna(lat) or pd.isna(lon)) and code in STATION_COORDINATE_OVERRIDES:
             lat, lon = STATION_COORDINATE_OVERRIDES[code]
 
+        raw_elapsed = row.get("elapsed_minutes_from_origin")
+        elapsed_val = float(raw_elapsed) if pd.notna(raw_elapsed) else 0.0
+
+        raw_dist = row.get("distance_from_origin")
+        dist_val = float(raw_dist) if pd.notna(raw_dist) else 0.0
+
         stops.append({
             "stop_no": int(row["station_no"]),
             "station_code": code,
             "station_name": str(row.get("station_full_name", code)).strip(),
             "scheduled_arrival": str(row["arrival_time"]) if pd.notna(row["arrival_time"]) else None,
             "scheduled_departure": str(row["departure_time"]) if pd.notna(row["departure_time"]) else None,
-            "distance_km": float(row.get("distance_from_origin", 0.0) or 0.0),
-            "latitude": float(lat) if pd.notna(lat) else None,
-            "longitude": float(lon) if pd.notna(lon) else None,
-            "elapsed_minutes": float(row.get("elapsed_minutes_from_origin", 0.0) or 0.0),
+            "distance_km": dist_val,
+            "latitude": float(lat) if pd.notna(lat) else 20.5937,
+            "longitude": float(lon) if pd.notna(lon) else 78.9629,
+            "elapsed_minutes": elapsed_val,
         })
 
     return stops

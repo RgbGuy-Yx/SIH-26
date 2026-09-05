@@ -12,6 +12,7 @@ from app.ml.feature_builder import (
     validate_inference_input,
     validate_weather_data,
     build_feature_dataframe,
+    build_feature_numpy,
     build_feature_dict,
 )
 from app.ml.schemas import (
@@ -34,7 +35,7 @@ def predict_delay(input_data: StationInferenceInput) -> PredictionResult:
        - If weather is missing or incomplete, triggers deterministic fallback:
          * Origin station: 0.0 minutes (static timetable).
          * Intermediate station: input_data.current_accumulated_delay (last known delay).
-    3. Builds 8-feature DataFrame with exact training schema.
+    3. Builds high-performance 2D float32 NumPy feature vector with exact canonical training schema.
     4. Performs model inference with cached XGBoost regressor.
     5. Returns PredictionResult with predicted_delay_minutes and metadata.
     """
@@ -73,11 +74,11 @@ def predict_delay(input_data: StationInferenceInput) -> PredictionResult:
 
     # 3. Build features & Run Inference
     try:
-        feature_df = build_feature_dataframe(input_data)
+        feature_vec = build_feature_numpy(input_data)
         feature_dict = build_feature_dict(input_data)
         model = get_model()
 
-        raw_prediction = float(model.predict(feature_df)[0])
+        raw_prediction = float(model.predict(feature_vec)[0])
         predicted_delay = round(raw_prediction, 2)
 
         return PredictionResult(
