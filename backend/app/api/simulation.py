@@ -62,3 +62,10 @@ def step_simulation(payload: Optional[StepPayload] = None):
 def get_simulation_state():
     """Get full current simulation snapshot."""
     return simulation_service.get_full_state_snapshot()
+
+
+@router.get("/topology")
+def get_network_topology():
+    """Retrieve complete railway graph stations, track sections, and GeoJSON data."""
+    return simulation_service.get_network_topology()
+

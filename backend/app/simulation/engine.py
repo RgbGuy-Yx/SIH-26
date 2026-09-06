@@ -236,11 +236,18 @@ class SimulationEngine:
                     route_progress=s.route_progress,
                     current_station=s.current_station,
                     next_station=s.next_station,
+                    origin_station=s.origin_station,
+                    destination_station=s.destination_station,
+                    scheduled_arrival=s.scheduled_arrival,
+                    upcoming_stops=s.upcoming_stops,
+                    has_active_conflict=s.has_active_conflict,
                     current_accumulated_delay=s.current_accumulated_delay,
                     ml_predicted_delay=s.ml_predicted_delay,
                     conflict_delay=s.conflict_delay,
                     final_predicted_delay=s.final_predicted_delay,
                     predicted_eta=s.predicted_eta,
+                    speed_kmh=s.speed_kmh,
+                    ai_reasoning=s.ai_reasoning,
                     train_status=s.train_status,
                 )
             )

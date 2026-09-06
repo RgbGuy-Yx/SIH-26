@@ -80,13 +80,154 @@ class SimulationService:
         return self.engine.get_snapshot().model_dump()
 
     def get_delta_state_snapshot(self) -> Dict[str, Any]:
+        if self.is_running:
+            self.engine.tick()
         return self.engine.get_delta_snapshot().model_dump()
+
+    def get_network_topology(self) -> Dict[str, Any]:
+        stations_list = []
+        station_features = []
+        for s_id, s in self.engine.graph.stations.items():
+            stn_data = {
+                "station_id": s.station_id,
+                "name": s.name,
+                "latitude": s.latitude,
+                "longitude": s.longitude,
+                "loop_capacity": s.loop_capacity,
+            }
+            stations_list.append(stn_data)
+            station_features.append({
+                "type": "Feature",
+                "properties": {
+                    "station_id": s.station_id,
+                    "name": s.name,
+                    "loop_capacity": s.loop_capacity,
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [s.longitude, s.latitude],
+                },
+            })
+
+        sections_list = []
+        track_features = []
+        for sec_id, sec in self.engine.graph.sections.items():
+            from_stn = self.engine.graph.get_station(sec.station_from)
+            to_stn = self.engine.graph.get_station(sec.station_to)
+            if from_stn and to_stn:
+                coords = [
+                    [from_stn.longitude, from_stn.latitude],
+                    [to_stn.longitude, to_stn.latitude],
+                ]
+                sec_data = {
+                    "section_id": sec.section_id,
+                    "station_from": sec.station_from,
+                    "station_to": sec.station_to,
+                    "length_km": sec.length_km,
+                    "track_type": sec.track_type.value if hasattr(sec.track_type, "value") else str(sec.track_type),
+                    "max_speed_kmh": sec.max_speed_kmh,
+                    "coordinates": coords,
+                }
+                sections_list.append(sec_data)
+                track_features.append({
+                    "type": "Feature",
+                    "properties": {
+                        "section_id": sec.section_id,
+                        "station_from": sec.station_from,
+                        "station_to": sec.station_to,
+                        "length_km": sec.length_km,
+                        "track_type": sec.track_type.value if hasattr(sec.track_type, "value") else str(sec.track_type),
+                        "max_speed_kmh": sec.max_speed_kmh,
+                    },
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": coords,
+                    },
+                })
+
+        TRAIN_ROUTE_COLORS = {
+            12003: "#00f2fe",  # Electric Cyan (Shatabdi)
+            12301: "#f59e0b",  # Amber Gold (Rajdhani)
+            22500: "#38bdf8",  # Sky Blue (Vande Bharat)
+            22587: "#10b981",  # Emerald Green (Amrit Bharat)
+            12113: "#a855f7",  # Purple (Garib Rath)
+            22639: "#f43f5e",  # Rose Red (Alleppey)
+            11033: "#fb923c",  # Orange (Darbhanga)
+            17392: "#84cc16",  # Lime Green (SNNR SBC)
+            56903: "#14b8a6",  # Teal (Passenger)
+            68716: "#ec4899",  # Pink (MEMU)
+        }
+
+        train_route_features = []
+        for t_no, train in self.engine.trains.items():
+            coords = []
+            stop_codes = []
+            for s in train.stops:
+                lat = s.get("latitude")
+                lon = s.get("longitude")
+                if lat is not None and lon is not None:
+                    try:
+                        f_lat, f_lon = float(lat), float(lon)
+                        if f_lat != 0.0 and f_lon != 0.0:
+                            coords.append([f_lon, f_lat])
+                            stop_codes.append(s.get("station_code") or s.get("station_id") or "")
+                    except (ValueError, TypeError):
+                        pass
+            if len(coords) >= 2:
+                train_route_features.append({
+                    "type": "Feature",
+                    "properties": {
+                        "train_no": t_no,
+                        "train_name": train.train_name,
+                        "priority_tier": train.priority_tier.value if hasattr(train.priority_tier, "value") else int(train.priority_tier),
+                        "color": TRAIN_ROUTE_COLORS.get(t_no, "#38bdf8"),
+                        "origin": stop_codes[0] if stop_codes else "",
+                        "destination": stop_codes[-1] if stop_codes else "",
+                        "stops": stop_codes,
+                    },
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": coords,
+                    },
+                })
+
+        return {
+            "stations": stations_list,
+            "sections": sections_list,
+            "geojson": {
+                "stations": {
+                    "type": "FeatureCollection",
+                    "features": station_features,
+                },
+                "tracks": {
+                    "type": "FeatureCollection",
+                    "features": track_features,
+                },
+                "train_routes": {
+                    "type": "FeatureCollection",
+                    "features": train_route_features,
+                },
+            },
+        }
 
     def get_train_list(self) -> List[Dict[str, Any]]:
         snapshot = self.engine.get_snapshot()
         conflict_train_ids = {c.get("train_no") for c in snapshot.active_conflicts}
-        return [
-            {
+        trains_result = []
+        for t in snapshot.trains:
+            train_entity = self.engine.trains.get(t.train_no)
+            route_coords = []
+            route_stops = []
+            if train_entity:
+                for s in train_entity.stops:
+                    lat, lon = s.get("latitude"), s.get("longitude")
+                    if lat is not None and lon is not None:
+                        try:
+                            route_coords.append([float(lon), float(lat)])
+                            route_stops.append(s.get("station_code") or s.get("station_id") or "")
+                        except (ValueError, TypeError):
+                            pass
+            trains_result.append({
                 "train_no": t.train_no,
                 "train_name": t.train_name,
                 "priority_tier": t.priority_tier,
@@ -94,15 +235,21 @@ class SimulationService:
                 "current_station": t.current_station,
                 "next_station": t.next_station,
                 "route_progress": t.route_progress,
+                "scheduled_arrival": t.scheduled_arrival,
+                "predicted_eta": t.predicted_eta,
                 "current_accumulated_delay": t.current_accumulated_delay,
                 "final_predicted_delay": t.final_predicted_delay,
                 "ml_delay_prediction": t.ml_predicted_delay,
                 "conflict_delay": t.conflict_delay,
-                "has_active_conflict": t.train_no in conflict_train_ids or t.conflict_delay > 0.0,
+                "has_active_conflict": t.train_no in conflict_train_ids or t.conflict_delay > 0.0 or t.has_active_conflict,
+                "upcoming_stops": t.upcoming_stops,
                 "position": {"latitude": t.latitude, "longitude": t.longitude},
-            }
-            for t in snapshot.trains
-        ]
+                "origin_station": t.origin_station or (route_stops[0] if route_stops else ""),
+                "destination_station": t.destination_station or (route_stops[-1] if route_stops else ""),
+                "route_stations": route_stops,
+                "route_coordinates": route_coords,
+            })
+        return trains_result
 
     def get_train_state(self, train_no: int) -> Optional[Dict[str, Any]]:
         train = self.engine.trains.get(train_no)

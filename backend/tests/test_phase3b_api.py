@@ -6,7 +6,7 @@ Phase 3B Test Suite: REST API, WebSockets, Live Train Status, Caching & Resilien
 import asyncio
 import pytest
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -172,7 +172,7 @@ def test_15_get_train_live_status(client):
     assert data["live_status"]["train_no"] == 12003
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_16_cache_hit_behavior():
     """Test 16: Cache service returns cached response within TTL."""
     call_count = 0
@@ -193,7 +193,7 @@ async def test_16_cache_hit_behavior():
     assert call_count == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_17_request_deduplication_coalescing():
     """Test 17: Concurrent in-flight requests coalesce into a single fetch execution."""
     fetch_count = 0
@@ -219,7 +219,7 @@ async def test_17_request_deduplication_coalescing():
         assert r["fetch_id"] == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_18_stale_fallback_on_api_error():
     """Test 18: On provider network failure, returns fallback error response."""
     provider = RailRadarProvider(api_key="invalid_test_key")
@@ -272,7 +272,7 @@ def test_20_decoupled_integrity(client):
     assert step_data["simulation_time"] != sim_state_before["simulation_time"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_railradar_exact_payload_parsing():
     """Test parsing of the official RailRadar live train running status response."""
     sample_payload = {
@@ -304,7 +304,7 @@ async def test_railradar_exact_payload_parsing():
         }
     }
 
-    mock_response = AsyncMock()
+    mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = sample_payload
 
@@ -326,7 +326,7 @@ async def test_railradar_exact_payload_parsing():
         assert res.exceptions is not None
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_railradar_error_envelope_parsing():
     """Test parsing of the official RailRadar error response envelope (404 / NOT_FOUND)."""
     error_payload = {
@@ -343,7 +343,7 @@ async def test_railradar_error_envelope_parsing():
         }
     }
 
-    mock_response = AsyncMock()
+    mock_response = MagicMock()
     mock_response.status_code = 404
     mock_response.json.return_value = error_payload
     mock_response.text = str(error_payload)
@@ -356,5 +356,22 @@ async def test_railradar_error_envelope_parsing():
         assert res.error_code == "NOT_FOUND"
         assert "NOT_FOUND" in res.error
         assert "Resource not found" in res.error
+
+
+def test_21_simulation_topology_endpoint(client):
+    """Test 21: Verify simulation topology returns stations, sections, and GeoJSON."""
+    resp = client.get("/api/simulation/topology")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "stations" in data
+    assert "sections" in data
+    assert "geojson" in data
+    assert "stations" in data["geojson"]
+    assert "tracks" in data["geojson"]
+    assert len(data["stations"]) > 0
+    assert len(data["sections"]) > 0
+    assert data["geojson"]["stations"]["type"] == "FeatureCollection"
+    assert data["geojson"]["tracks"]["type"] == "FeatureCollection"
+
 
 

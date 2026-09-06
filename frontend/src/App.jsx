@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SimulationProvider } from './context/SimulationContext';
 import DashboardLayout from './layouts/DashboardLayout';
 import UserLayout from './layouts/UserLayout';
 import LiveMapPage from './pages/LiveMapPage';
@@ -38,7 +39,9 @@ function AppRoutes() {
         path="/control-room"
         element={
           <ProtectedRoute>
-            <DashboardLayout />
+            <SimulationProvider>
+              <DashboardLayout />
+            </SimulationProvider>
           </ProtectedRoute>
         }
       >

@@ -1,15 +1,46 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSimulation } from '../context/SimulationContext';
 
 export function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser, logout } = useAuth();
+  const {
+    simulationTime,
+    speedMultiplier,
+    isRunning,
+    isPaused,
+    pauseSimulation,
+    resumeSimulation,
+    resetSimulation,
+    activeConflicts,
+  } = useSimulation();
 
   const handleLogout = () => {
     logout();
     navigate('/login', { replace: true });
+  };
+
+  // Format virtual simulation timestamp
+  const formatSimTime = (isoString) => {
+    if (!isoString) return '28 Aug 2026, 06:00:00';
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return isoString;
+      return d.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      }) + ', ' + d.toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    } catch {
+      return isoString;
+    }
   };
 
   const navItems = [
@@ -29,7 +60,7 @@ export function DashboardLayout() {
       path: '/control-room/alerts-and-conflicts',
       label: 'Alerts & Conflicts',
       icon: 'warning',
-      badge: '7',
+      badge: activeConflicts && activeConflicts.length > 0 ? String(activeConflicts.length) : null,
       badgeColor: 'bg-error-container text-on-error-container'
     },
     {
@@ -120,22 +151,34 @@ export function DashboardLayout() {
             {/* Simulation Time Clock */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-slate-800 text-xs font-mono text-on-surface">
               <span className="material-symbols-outlined text-primary text-[18px]">schedule</span>
-              <span>12 Dec 2024, 14:32:10</span>
-              <span className="text-[11px] font-mono text-tertiary px-1.5 py-0.5 rounded bg-surface-container-high">(4x speed)</span>
+              <span>{formatSimTime(simulationTime)}</span>
+              <span className="text-[11px] font-mono text-tertiary px-1.5 py-0.5 rounded bg-surface-container-high">
+                ({speedMultiplier}x speed)
+              </span>
             </div>
 
             {/* Controls */}
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-high text-on-surface text-xs font-semibold hover:bg-surface-bright transition-all"
+                onClick={!isRunning || isPaused ? resumeSimulation : pauseSimulation}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  !isRunning || isPaused
+                    ? 'bg-emerald-950 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900'
+                    : 'bg-surface-container-high text-on-surface hover:bg-surface-bright'
+                }`}
+                title={!isRunning || isPaused ? 'Resume Simulation' : 'Pause Simulation'}
               >
-                <span className="material-symbols-outlined text-[16px]">pause</span>
-                <span>Pause</span>
+                <span className="material-symbols-outlined text-[16px]">
+                  {!isRunning || isPaused ? 'play_arrow' : 'pause'}
+                </span>
+                <span>{!isRunning || isPaused ? 'Resume' : 'Pause'}</span>
               </button>
               <button
                 type="button"
+                onClick={() => resetSimulation()}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-error-container text-on-error-container text-xs font-semibold hover:bg-error transition-all shadow-[0_0_10px_rgba(229,72,77,0.3)]"
+                title="Reset Simulation Clock & Delays"
               >
                 <span className="material-symbols-outlined text-[16px]">restart_alt</span>
                 <span>Reset</span>

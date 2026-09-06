@@ -59,14 +59,13 @@ class VirtualClock:
 
     def pause(self) -> None:
         """Pause the virtual clock."""
-        if self._is_running:
-            self._is_paused = True
+        self._is_paused = True
 
     def resume(self) -> None:
-        """Resume the paused virtual clock."""
-        if self._is_running and self._is_paused:
-            self._is_paused = False
-            self._last_real_time = time.perf_counter()
+        """Resume the paused virtual clock, or start it if not running."""
+        self._is_running = True
+        self._is_paused = False
+        self._last_real_time = time.perf_counter()
 
     def reset(self, initial_time: Optional[datetime] = None) -> None:
         """Reset the clock to original starting state."""

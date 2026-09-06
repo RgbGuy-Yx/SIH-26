@@ -19,8 +19,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Start WebSocket background telemetry broadcaster
+    # Startup: Start simulation clock and WebSocket background telemetry broadcaster
     logger.info("Starting up Real-Time Rail Engine...")
+    from app.services.simulation_service import simulation_service
+    simulation_service.start()
     broadcaster.start()
     yield
     # Shutdown: Stop broadcaster gracefully
