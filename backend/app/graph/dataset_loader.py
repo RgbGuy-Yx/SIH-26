@@ -231,6 +231,20 @@ def get_train_timetable(train_no: int, csv_path: Optional[str] = None) -> List[D
         raw_dist = row.get("distance_from_origin")
         dist_val = float(raw_dist) if pd.notna(raw_dist) else 0.0
 
+        # Meteorological observation from dataset if available
+        weather_dict = None
+        if pd.notna(row.get("avg_temperature")) and bool(row.get("weather_data_available", True)):
+            try:
+                weather_dict = {
+                    "is_foggy": float(row.get("is_foggy", 0.0) or 0.0),
+                    "avg_temperature": float(row.get("avg_temperature", 25.0)),
+                    "total_precipitation": float(row.get("total_precipitation", 0.0) or 0.0),
+                    "avg_wind_speed": float(row.get("avg_wind_speed", 5.0) or 5.0),
+                    "avg_cloud_cover": float(row.get("avg_cloud_cover", 10.0) or 10.0),
+                }
+            except Exception:
+                weather_dict = None
+
         stops.append({
             "stop_no": int(row["station_no"]),
             "station_code": code,
@@ -241,6 +255,9 @@ def get_train_timetable(train_no: int, csv_path: Optional[str] = None) -> List[D
             "latitude": float(lat) if pd.notna(lat) else 20.5937,
             "longitude": float(lon) if pd.notna(lon) else 78.9629,
             "elapsed_minutes": elapsed_val,
+            "arrival_day": float(row.get("arrival_day", 1.0) or 1.0) if pd.notna(row.get("arrival_day")) else 1.0,
+            "departure_day": float(row.get("departure_day", 1.0) or 1.0) if pd.notna(row.get("departure_day")) else 1.0,
+            "weather": weather_dict,
         })
 
     return stops

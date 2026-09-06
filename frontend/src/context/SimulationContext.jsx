@@ -91,7 +91,7 @@ export function SimulationProvider({ children }) {
 
   // 3. WebSocket Connection & Real-Time Telemetry Stream
   useEffect(() => {
-    const wsUrl = (import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8080') + '/ws';
+    const wsUrl = (import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8000') + '/ws';
     let isMounted = true;
 
     function connectWs() {
@@ -158,12 +158,13 @@ export function SimulationProvider({ children }) {
         };
 
         ws.onerror = (err) => {
-          console.warn('WebSocket error:', err);
-          ws.close();
+          if (!isMounted) return;
+          // Suppress noise during hot reloads or server restarts
+          console.debug('WebSocket stream notice:', err);
         };
       } catch (err) {
-        console.error('Failed to create WebSocket:', err);
         if (isMounted) {
+          console.debug('Failed to create WebSocket:', err);
           reconnectTimeoutRef.current = setTimeout(connectWs, 3000);
         }
       }
@@ -175,10 +176,46 @@ export function SimulationProvider({ children }) {
       isMounted = false;
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (wsRef.current) {
-        wsRef.current.close();
+        const socket = wsRef.current;
+        // Suppress browser "closed before connection established" warning during React StrictMode remounts
+        if (socket.readyState === WebSocket.CONNECTING) {
+          socket.onopen = () => {
+            try { socket.close(); } catch (_) {}
+          };
+        } else if (socket.readyState === WebSocket.OPEN) {
+          try { socket.close(); } catch (_) {}
+        }
       }
     };
   }, []);
+
+  // 3B. High-Reliability Polling Fallback if WebSocket is disconnected or reconnecting
+  useEffect(() => {
+    if (wsConnected) return;
+
+    let isMounted = true;
+    const interval = setInterval(async () => {
+      try {
+        const simState = await api.getSimulationState();
+        if (isMounted && simState && Array.isArray(simState.trains)) {
+          setSimulationTime(simState.simulation_time);
+          setIsRunning(simState.is_running);
+          setIsPaused(simState.is_paused);
+          setSpeedMultiplier(simState.time_multiplier);
+          setActiveConflicts(simState.active_conflicts || []);
+          simState.trains.forEach((t) => trainStateMapRef.current.set(t.train_no, t));
+          setTrains(Array.from(trainStateMapRef.current.values()));
+        }
+      } catch (err) {
+        // Quiet fallback
+      }
+    }, 2000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [wsConnected]);
 
   // 4. Control Handlers
   const pauseSimulation = useCallback(async () => {
@@ -242,6 +279,7 @@ export function SimulationProvider({ children }) {
     activeConflicts,
     selectedTrainNo: selectedTrain?.train_no || selectedTrainNo,
     selectedTrain,
+    selectedTrainDetails,
     setSelectedTrainNo,
     simulationTime,
     isRunning,

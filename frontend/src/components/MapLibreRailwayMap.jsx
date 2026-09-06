@@ -1,12 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-const CARTO_DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+// 1. Clean Minimal Light Vector Basemap Style (matching Konux reference aesthetic)
+const CARTO_POSITRON_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
 
-// Fallback style if offline or external tiles fail
-const FALLBACK_DARK_STYLE = {
+// Fallback style if external tiles fail or offline
+const FALLBACK_LIGHT_STYLE = {
   version: 8,
+  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: {
     'osm-tiles': {
       type: 'raster',
@@ -17,19 +19,54 @@ const FALLBACK_DARK_STYLE = {
   },
   layers: [
     {
+      id: 'background',
+      type: 'background',
+      paint: {
+        'background-color': '#F4F5F7',
+      },
+    },
+    {
       id: 'osm-tiles-layer',
       type: 'raster',
       source: 'osm-tiles',
       minzoom: 0,
       maxzoom: 19,
       paint: {
-        'raster-opacity': 0.35,
-        'raster-brightness-max': 0.4,
-        'raster-contrast': 0.2,
+        'raster-opacity': 0.15,
+        'raster-saturation': -0.9,
       },
     },
   ],
 };
+
+// Hub landmark numbers assigned to key junction stations (matching reference image hubs 21, 32, 17, etc.)
+const HUB_NUMBERS = {
+  NDLS: '21',
+  CNB: '32',
+  PRYJ: '17',
+  BSB: '44',
+  TDL: '19',
+  GZB: '08',
+  DDU: '45',
+  ALJN: '14',
+  SUR: '21',
+  GDG: '32',
+  DWR: '17',
+  LJN: '28',
+};
+
+// Fallback stations to ensure national mesh is always visible
+const FALLBACK_NATIONAL_STATIONS = [
+  { station_id: 'NDLS', name: 'New Delhi', longitude: 77.2197, latitude: 28.6139 },
+  { station_id: 'GZB', name: 'Ghaziabad', longitude: 77.4538, latitude: 28.6692 },
+  { station_id: 'ALJN', name: 'Aligarh Junction', longitude: 78.0880, latitude: 27.8974 },
+  { station_id: 'TDL', name: 'Tundla Junction', longitude: 78.2415, latitude: 27.2081 },
+  { station_id: 'CNB', name: 'Kanpur Central', longitude: 80.3537, latitude: 26.4539 },
+  { station_id: 'LJN', name: 'Lucknow Junction', longitude: 80.9234, latitude: 26.8322 },
+  { station_id: 'PRYJ', name: 'Prayagraj Junction', longitude: 81.8340, latitude: 25.4358 },
+  { station_id: 'BSB', name: 'Varanasi Junction', longitude: 82.9739, latitude: 25.3284 },
+  { station_id: 'DDU', name: 'Pt. Deen Dayal Upadhyaya', longitude: 83.1189, latitude: 25.2818 },
+];
 
 export function MapLibreRailwayMap({
   topology,
@@ -38,15 +75,32 @@ export function MapLibreRailwayMap({
   onSelectTrain,
   selectedStation = null,
   onSelectStation,
+  selectedSwitchId = null,
+  onSelectSwitch,
+  liveTrainData = null,
+  showLiveFeed = true,
+  showVirtualSim = true,
+  onToggleHideLiveFeed = null,
 }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
-  const markersMapRef = useRef(new Map()); // train_no -> maplibregl.Marker
+  const markersMapRef = useRef(new Map());
+  const hubMarkersMapRef = useRef(new Map());
+  const pathLabelMarkerRef = useRef(null);
+  const tooltipMarkerRef = useRef(null);
+  const pointerAnchorMarkerRef = useRef(null);
+  const liveTrainMarkerRef = useRef(null);
+  const liveTrainPopupRef = useRef(null);
+  const lastFlownLiveTrainRef = useRef(null);
+  const onSelectTrainRef = useRef(onSelectTrain);
+  useEffect(() => {
+    onSelectTrainRef.current = onSelectTrain;
+  }, [onSelectTrain]);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [viewMode, setViewMode] = useState('corridor'); // 'corridor' | 'all'
   const hasAutoFittedRef = useRef(false);
 
-  // 1. Initialize MapLibre GL Map
+  // 1. Initialize MapLibre GL instance
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
@@ -54,47 +108,45 @@ export function MapLibreRailwayMap({
     try {
       mapInstance = new maplibregl.Map({
         container: mapContainerRef.current,
-        style: CARTO_DARK_STYLE,
-        center: [80.8, 25.5], // Centered on trunk national corridor
-        zoom: 6.2,
+        style: CARTO_POSITRON_STYLE,
+        center: [80.5, 26.2], // Centered on trunk corridor (Delhi-Kanpur-Varanasi)
+        zoom: 6.5,
         minZoom: 3.5,
         maxZoom: 17,
         pitch: 0,
         bearing: 0,
         attributionControl: false,
       });
-    } catch (e) {
-      console.warn('Falling back to raster dark tiles for MapLibre:', e);
+    } catch {
       mapInstance = new maplibregl.Map({
         container: mapContainerRef.current,
-        style: FALLBACK_DARK_STYLE,
-        center: [80.8, 25.5],
-        zoom: 6.2,
+        style: FALLBACK_LIGHT_STYLE,
+        center: [80.5, 26.2],
+        zoom: 6.5,
         minZoom: 3.5,
         maxZoom: 17,
         attributionControl: false,
       });
     }
 
-    // Add navigation controls (zoom in/out)
-    mapInstance.addControl(
-      new maplibregl.NavigationControl({
-        showCompass: false,
-        visualizePitch: false,
-      }),
-      'bottom-right'
-    );
-
     mapInstance.on('load', () => {
       setMapLoaded(true);
+      setTimeout(() => {
+        mapInstance.resize();
+      }, 100);
     });
 
     mapRef.current = mapInstance;
 
     return () => {
-      // Clean up markers
       markersMapRef.current.forEach((marker) => marker.remove());
       markersMapRef.current.clear();
+      hubMarkersMapRef.current.forEach((marker) => marker.remove());
+      hubMarkersMapRef.current.clear();
+      if (pathLabelMarkerRef.current) pathLabelMarkerRef.current.remove();
+      if (tooltipMarkerRef.current) tooltipMarkerRef.current.remove();
+      if (pointerAnchorMarkerRef.current) pointerAnchorMarkerRef.current.remove();
+      if (liveTrainMarkerRef.current) liveTrainMarkerRef.current.remove();
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -102,280 +154,872 @@ export function MapLibreRailwayMap({
     };
   }, []);
 
-  // 2. Add Railway Tracks and Stations GeoJSON Layers
+  // Handle window and container resize with ResizeObserver
+  useEffect(() => {
+    const handleResize = () => {
+      if (mapRef.current) {
+        mapRef.current.resize();
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    let resizeObserver;
+    if (mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (mapRef.current) {
+          mapRef.current.resize();
+        }
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (resizeObserver) resizeObserver.disconnect();
+    };
+  }, [mapLoaded]);
+
+  // 2. Render NetworkX Pathways (Dotted Background Mesh) & Station Nodes
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoaded || !topology || !topology.geojson) return;
+    if (!map || !mapLoaded) return;
 
-    const { tracks, stations } = topology.geojson;
+    // A. Tracks GeoJSON (from topology or fallback)
+    let tracksGeoJSON = topology?.geojson?.tracks;
+    let stationsGeoJSON = topology?.geojson?.stations;
 
-    // --- TRACKS LAYER ---
-    if (!map.getSource('railway-tracks')) {
-      map.addSource('railway-tracks', {
+    if (!tracksGeoJSON || !tracksGeoJSON.features || tracksGeoJSON.features.length === 0) {
+      const coords = FALLBACK_NATIONAL_STATIONS.map((s) => [s.longitude, s.latitude]);
+      tracksGeoJSON = {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: { section_id: 'NDLS-BSB-TRUNK' },
+            geometry: {
+              type: 'LineString',
+              coordinates: coords,
+            },
+          },
+        ],
+      };
+    }
+
+    if (!stationsGeoJSON || !stationsGeoJSON.features || stationsGeoJSON.features.length === 0) {
+      stationsGeoJSON = {
+        type: 'FeatureCollection',
+        features: FALLBACK_NATIONAL_STATIONS.map((s) => ({
+          type: 'Feature',
+          properties: {
+            station_id: s.station_id,
+            name: s.name,
+            is_hub: Boolean(HUB_NUMBERS[s.station_id]),
+            hub_number: HUB_NUMBERS[s.station_id] || '',
+          },
+          geometry: {
+            type: 'Point',
+            coordinates: [s.longitude, s.latitude],
+          },
+        })),
+      };
+    } else {
+      stationsGeoJSON = {
+        ...stationsGeoJSON,
+        features: stationsGeoJSON.features.map((f) => {
+          const id = f.properties.station_id;
+          const hubNum = HUB_NUMBERS[id] || null;
+          return {
+            ...f,
+            properties: {
+              ...f.properties,
+              is_hub: Boolean(hubNum),
+              hub_number: hubNum || '',
+            },
+          };
+        }),
+      };
+    }
+
+    // B. Background Network Pathways (Thin, Dotted/Dashed lines like reference image)
+    if (!map.getSource('railway-tracks-mesh')) {
+      map.addSource('railway-tracks-mesh', {
         type: 'geojson',
-        data: tracks,
+        data: tracksGeoJSON,
       });
 
-      // Track glow (ambient outer halo)
       map.addLayer({
-        id: 'railway-tracks-glow',
+        id: 'railway-tracks-mesh-line',
         type: 'line',
-        source: 'railway-tracks',
+        source: 'railway-tracks-mesh',
         layout: {
           'line-join': 'round',
           'line-cap': 'round',
         },
         paint: {
-          'line-color': '#1d4ed8',
-          'line-width': 5,
-          'line-blur': 4,
-          'line-opacity': 0.7,
-        },
-      });
-
-      // Track core line
-      map.addLayer({
-        id: 'railway-tracks-line',
-        type: 'line',
-        source: 'railway-tracks',
-        layout: {
-          'line-join': 'round',
-          'line-cap': 'round',
-        },
-        paint: {
-          'line-color': '#60a5fa',
-          'line-width': 2.2,
-          'line-opacity': 0.95,
-        },
-      });
-
-      // Track centerline dash
-      map.addLayer({
-        id: 'railway-tracks-inner-dash',
-        type: 'line',
-        source: 'railway-tracks',
-        layout: {
-          'line-join': 'round',
-          'line-cap': 'round',
-        },
-        paint: {
-          'line-color': '#ffffff',
-          'line-width': 0.8,
-          'line-dasharray': [3, 4],
-          'line-opacity': 0.6,
+          'line-color': '#94A3B8', // Clean slate-gray
+          'line-width': 1.4,
+          'line-dasharray': [2, 3], // Dotted / dashed pattern from reference image
+          'line-opacity': 0.75,
         },
       });
     } else {
-      map.getSource('railway-tracks').setData(tracks);
+      map.getSource('railway-tracks-mesh').setData(tracksGeoJSON);
     }
 
-    // --- STATIONS LAYER ---
-    if (!map.getSource('railway-stations')) {
-      map.addSource('railway-stations', {
+    // C. Background Context Station Nodes (Muted circular dots with white ring)
+    if (!map.getSource('railway-stations-mesh')) {
+      map.addSource('railway-stations-mesh', {
         type: 'geojson',
-        data: stations,
+        data: stationsGeoJSON,
       });
 
-      // Outer circle
       map.addLayer({
-        id: 'railway-stations-halo',
+        id: 'railway-context-nodes',
         type: 'circle',
-        source: 'railway-stations',
+        source: 'railway-stations-mesh',
         paint: {
-          'circle-radius': 6.5,
-          'circle-color': '#030e20',
-          'circle-stroke-width': 2.5,
-          'circle-stroke-color': '#3b82f6',
+          'circle-radius': 3.5,
+          'circle-color': '#94A3B8',
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#FFFFFF',
+          'circle-opacity': 0.85,
         },
       });
 
-      // Inner dot
-      map.addLayer({
-        id: 'railway-stations-dot',
-        type: 'circle',
-        source: 'railway-stations',
-        paint: {
-          'circle-radius': 2.5,
-          'circle-color': '#93c5fd',
-        },
-      });
-
-      // Station Labels
-      map.addLayer({
-        id: 'railway-stations-label',
-        type: 'symbol',
-        source: 'railway-stations',
-        layout: {
-          'text-field': ['get', 'name'],
-          'text-size': 11,
-          'text-anchor': 'top',
-          'text-offset': [0, 0.75],
-          'text-max-width': 8,
-          'text-allow-overlap': false,
-        },
-        paint: {
-          'text-color': '#d8e3fc',
-          'text-halo-color': '#030e20',
-          'text-halo-width': 1.5,
-        },
-      });
-
-      // Station Mouse Handlers (Pointer cursor only, no popups)
-      map.on('mouseenter', 'railway-stations-halo', () => {
+      map.on('mouseenter', 'railway-context-nodes', () => {
         map.getCanvas().style.cursor = 'pointer';
       });
-
-      map.on('mouseleave', 'railway-stations-halo', () => {
+      map.on('mouseleave', 'railway-context-nodes', () => {
         map.getCanvas().style.cursor = '';
       });
 
-      // Station Click Handlers (Select station in telemetry/corridor view)
-      map.on('click', 'railway-stations-halo', (e) => {
+      map.on('click', 'railway-context-nodes', (e) => {
         if (!e.features || e.features.length === 0) return;
         const feature = e.features[0];
         const { station_id, name } = feature.properties;
-        if (onSelectStation) {
-          onSelectStation(`${name} (${station_id})`);
-        }
+        const coords = feature.geometry.coordinates;
+
+        const switchId = `${station_id}--SW----110`;
+        if (onSelectStation) onSelectStation(`${name} (${station_id})`);
+        if (onSelectSwitch) onSelectSwitch(switchId);
+
+        showTooltipAndAnchor(name, station_id, switchId, coords);
       });
     } else {
-      map.getSource('railway-stations').setData(stations);
+      map.getSource('railway-stations-mesh').setData(stationsGeoJSON);
     }
 
-    // Auto-fit bounds on first successful load
-    if (!hasAutoFittedRef.current && topology.stations && topology.stations.length > 0) {
+    // D. Landmark Hub Nodes (Numbered circular badges like 21, 32, 17 in reference image)
+    const currentHubCodes = new Set();
+    stationsGeoJSON.features.forEach((feat) => {
+      const { station_id, name, is_hub, hub_number } = feat.properties;
+      if (!is_hub || !hub_number) return;
+
+      currentHubCodes.add(station_id);
+      const coords = feat.geometry.coordinates;
+
+      let hubMarker = hubMarkersMapRef.current.get(station_id);
+      if (!hubMarker) {
+        const el = document.createElement('div');
+        el.className = 'hub-landmark-node cursor-pointer select-none';
+        el.innerHTML = `
+          <div class="w-6 h-6 rounded-full bg-[#64748B] border-2 border-white shadow-xs flex items-center justify-center text-white font-mono font-bold text-[9px] hover:scale-110 transition-transform">
+            ${hub_number}
+          </div>
+        `;
+
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const switchId = `${station_id}--SW----110`;
+          if (onSelectStation) onSelectStation(`${name} (${station_id})`);
+          if (onSelectSwitch) onSelectSwitch(switchId);
+          showTooltipAndAnchor(name, station_id, switchId, coords);
+        });
+
+        hubMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(coords)
+          .addTo(map);
+
+        hubMarkersMapRef.current.set(station_id, hubMarker);
+      } else {
+        hubMarker.setLngLat(coords);
+      }
+    });
+
+    hubMarkersMapRef.current.forEach((marker, stnId) => {
+      if (!currentHubCodes.has(stnId)) {
+        marker.remove();
+        hubMarkersMapRef.current.delete(stnId);
+      }
+    });
+  }, [mapLoaded, topology, onSelectStation, onSelectSwitch]);
+
+  // 3. Render Active Selected Route Pathway (Vibrant Cyan Line & Clean Ring Nodes)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    let activeRouteCoords = [];
+    const activeTrain = trains.find((t) => t.train_no === selectedTrainNo);
+
+    if (activeTrain && activeTrain.route_coordinates && activeTrain.route_coordinates.length >= 2) {
+      activeRouteCoords = activeTrain.route_coordinates;
+    } else if (topology?.geojson?.train_routes?.features) {
+      const matchFeature = topology.geojson.train_routes.features.find(
+        (f) => f.properties.train_no === selectedTrainNo
+      );
+      if (matchFeature && matchFeature.geometry?.coordinates?.length >= 2) {
+        activeRouteCoords = matchFeature.geometry.coordinates;
+      }
+    }
+
+    if (activeRouteCoords.length < 2) {
+      if (topology?.stations && topology.stations.length >= 2) {
+        activeRouteCoords = topology.stations.slice(0, 10).map((s) => [s.longitude, s.latitude]);
+      } else {
+        activeRouteCoords = FALLBACK_NATIONAL_STATIONS.map((s) => [s.longitude, s.latitude]);
+      }
+    }
+
+    const hasSelection = Boolean(showVirtualSim && (selectedTrainNo || selectedSwitchId));
+
+    // Selected Route Pathway Line
+    const activeLineGeoJSON = {
+      type: 'FeatureCollection',
+      features:
+        hasSelection && activeRouteCoords.length >= 2
+          ? [
+              {
+                type: 'Feature',
+                properties: { train_no: selectedTrainNo },
+                geometry: {
+                  type: 'LineString',
+                  coordinates: activeRouteCoords,
+                },
+              },
+            ]
+          : [],
+    };
+
+    // Selected Route Node Dots
+    const activeNodesGeoJSON = {
+      type: 'FeatureCollection',
+      features:
+        hasSelection && activeRouteCoords.length > 0
+          ? activeRouteCoords.map((coord, idx) => ({
+              type: 'Feature',
+              properties: { index: idx },
+              geometry: {
+                type: 'Point',
+                coordinates: coord,
+              },
+            }))
+          : [],
+    };
+
+    // A. Selected Path Solid Cyan Line Layer
+    if (!map.getSource('railway-selected-path')) {
+      map.addSource('railway-selected-path', {
+        type: 'geojson',
+        data: activeLineGeoJSON,
+      });
+
+      map.addLayer({
+        id: 'railway-selected-path-line',
+        type: 'line',
+        source: 'railway-selected-path',
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
+        },
+        paint: {
+          'line-color': '#00A3C4', // Cyan accent line matching reference image
+          'line-width': 3.5,
+          'line-opacity': 1.0,
+        },
+      });
+    } else {
+      map.getSource('railway-selected-path').setData(activeLineGeoJSON);
+    }
+
+    // B. Selected Path Nodes (White circle with cyan ring)
+    if (!map.getSource('railway-selected-nodes')) {
+      map.addSource('railway-selected-nodes', {
+        type: 'geojson',
+        data: activeNodesGeoJSON,
+      });
+
+      map.addLayer({
+        id: 'railway-selected-nodes-dots',
+        type: 'circle',
+        source: 'railway-selected-nodes',
+        paint: {
+          'circle-radius': 4.5,
+          'circle-color': '#FFFFFF',
+          'circle-stroke-width': 2.2,
+          'circle-stroke-color': '#00A3C4',
+        },
+      });
+    } else {
+      map.getSource('railway-selected-nodes').setData(activeNodesGeoJSON);
+    }
+
+    // C. Mid-route Floating Route Chip (e.g. R-12003 / R-7620)
+    if (hasSelection && activeRouteCoords.length >= 2) {
+      const midIdx = Math.floor(activeRouteCoords.length / 2);
+      const midCoord = activeRouteCoords[midIdx] || activeRouteCoords[0];
+      const routeId = selectedTrainNo ? `R-${selectedTrainNo}` : 'R-12003';
+
+      if (!pathLabelMarkerRef.current) {
+        const labelEl = document.createElement('div');
+        labelEl.className = 'path-label-chip pointer-events-none select-none';
+        labelEl.innerHTML = `
+          <div class="px-2 py-0.5 rounded bg-white border border-[#00A3C4] shadow-xs text-[#00A3C4] font-mono text-[10px] font-bold tracking-tight">
+            ${routeId}
+          </div>
+        `;
+
+        pathLabelMarkerRef.current = new maplibregl.Marker({
+          element: labelEl,
+          anchor: 'center',
+          offset: [0, -14],
+        })
+          .setLngLat(midCoord)
+          .addTo(map);
+      } else {
+        pathLabelMarkerRef.current.setLngLat(midCoord);
+        const labelEl = pathLabelMarkerRef.current.getElement();
+        labelEl.innerHTML = `
+          <div class="px-2 py-0.5 rounded bg-white border border-[#00A3C4] shadow-xs text-[#00A3C4] font-mono text-[10px] font-bold tracking-tight">
+            ${routeId}
+          </div>
+        `;
+      }
+    } else if (pathLabelMarkerRef.current) {
+      pathLabelMarkerRef.current.remove();
+      pathLabelMarkerRef.current = null;
+    }
+
+    // Auto-fit initial bounds
+    if (activeRouteCoords.length >= 2 && !hasAutoFittedRef.current) {
       let minLon = 180,
         maxLon = -180,
         minLat = 90,
         maxLat = -90;
-      let validCount = 0;
-      topology.stations.forEach((s) => {
-        const lon = s.longitude;
-        const lat = s.latitude;
-        if (lon && lat && !isNaN(lon) && !isNaN(lat)) {
-          if (lon < minLon) minLon = lon;
-          if (lon > maxLon) maxLon = lon;
-          if (lat < minLat) minLat = lat;
-          if (lat > maxLat) maxLat = lat;
-          validCount++;
-        }
+      activeRouteCoords.forEach(([lon, lat]) => {
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
       });
-      if (validCount > 0 && minLon < maxLon && minLat < maxLat) {
+      if (minLon < maxLon && minLat < maxLat) {
         map.fitBounds(
           [
-            [minLon - 0.5, minLat - 0.5],
-            [maxLon + 0.5, maxLat + 0.5],
+            [minLon - 0.4, minLat - 0.4],
+            [maxLon + 0.4, maxLat + 0.4],
           ],
-          { padding: 40, duration: 1000 }
+          { padding: 70, duration: 1000 }
         );
         hasAutoFittedRef.current = true;
       }
     }
-  }, [mapLoaded, topology, selectedTrainNo, onSelectStation]);
+  }, [mapLoaded, topology, selectedTrainNo, selectedSwitchId, trains, showVirtualSim]);
 
-  // 3. Dynamic Train Markers (Continuous Updates from Simulation Delta)
+  // 4. Show Tooltip Card & Pointer Indicator anchored at selected node
+  const showTooltipAndAnchor = (stationName, stationCode, switchId, coords) => {
+    const map = mapRef.current;
+    if (!map || !coords) return;
+
+    if (tooltipMarkerRef.current) tooltipMarkerRef.current.remove();
+    if (pointerAnchorMarkerRef.current) pointerAnchorMarkerRef.current.remove();
+
+    // Pointer Indicator at the exact coordinate
+    const pointerEl = document.createElement('div');
+    pointerEl.className = 'pointer-anchor select-none';
+    pointerEl.innerHTML = `
+      <div class="relative flex items-center justify-center">
+        <span class="w-3.5 h-3.5 rounded-full bg-slate-900 border-2 border-white shadow-xs flex items-center justify-center">
+          <span class="w-1 h-1 rounded-full bg-white"></span>
+        </span>
+        <svg class="absolute -top-3.5 -right-3.5 w-4 h-4 text-slate-900 drop-shadow-xs pointer-events-none" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M7 2l12 11.5-5.5 1.5 3.5 7-2.5 1-3.5-7-4 4V2z"/>
+        </svg>
+      </div>
+    `;
+
+    const pointerMarker = new maplibregl.Marker({
+      element: pointerEl,
+      anchor: 'center',
+    })
+      .setLngLat(coords)
+      .addTo(map);
+
+    pointerAnchorMarkerRef.current = pointerMarker;
+
+    // Dark Near-Black Tooltip Card with Real Station Details
+    const tooltipEl = document.createElement('div');
+    tooltipEl.className = 'hover-tooltip-card cursor-pointer select-none';
+    tooltipEl.innerHTML = `
+      <div class="bg-[#111827] text-white rounded-xl p-3 shadow-2xl border border-slate-700 min-w-[190px] text-xs space-y-1.5 transition-all">
+        <div class="font-mono text-xs font-bold text-cyan-300 pb-1 border-b border-slate-800 flex items-center justify-between">
+          <span>${stationCode}</span>
+          <span class="text-[10px] text-slate-400 font-sans font-normal">STATION NODE</span>
+        </div>
+        <div class="font-bold text-xs text-white truncate">${stationName}</div>
+        <div class="text-[10px] font-mono text-slate-400">
+          GPS: ${coords[1].toFixed(4)}°N, ${coords[0].toFixed(4)}°E
+        </div>
+      </div>
+    `;
+
+    const tooltipMarker = new maplibregl.Marker({
+      element: tooltipEl,
+      anchor: 'bottom-left',
+      offset: [16, -14],
+    })
+      .setLngLat(coords)
+      .addTo(map);
+
+    tooltipMarkerRef.current = tooltipMarker;
+
+    tooltipEl.addEventListener('click', () => {
+      tooltipMarker.remove();
+      tooltipMarkerRef.current = null;
+      if (pointerAnchorMarkerRef.current) {
+        pointerAnchorMarkerRef.current.remove();
+        pointerAnchorMarkerRef.current = null;
+      }
+    });
+  };
+
+  // 5. Update marker when selectedSwitchId changes externally
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded || !selectedSwitchId) return;
+
+    const stnCode = selectedSwitchId.split('--')[0].replace(/-/g, '');
+    const station =
+      (topology?.stations && topology.stations.find((s) => s.station_id === stnCode)) ||
+      FALLBACK_NATIONAL_STATIONS.find((s) => s.station_id === stnCode);
+
+    if (station && station.longitude && station.latitude) {
+      showTooltipAndAnchor(
+        station.name,
+        station.station_id,
+        selectedSwitchId,
+        [station.longitude, station.latitude]
+      );
+    }
+  }, [selectedSwitchId, mapLoaded, topology]);
+
+  // 6. Native WebGL Train Tracking Layers (GPU-Accelerated Symbol & Circle Layers)
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoaded || !trains) return;
+    if (!map || !mapLoaded) return;
 
-    const currentTrainNos = new Set();
+    // Clean up any legacy DOM markers
+    if (markersMapRef.current.size > 0) {
+      markersMapRef.current.forEach((marker) => marker.remove());
+      markersMapRef.current.clear();
+    }
 
-    trains.forEach((train) => {
-      const trainNo = train.train_no;
-      const lat = train.latitude || (train.position && train.position.latitude);
-      const lon = train.longitude || (train.position && train.position.longitude);
+    const simTrainFeatures =
+      showVirtualSim && Array.isArray(trains)
+        ? trains
+            .filter((train) => {
+              const lat = train.latitude || (train.position && train.position.latitude);
+              const lon = train.longitude || (train.position && train.position.longitude);
+              return lat != null && lon != null && !isNaN(lat) && !isNaN(lon);
+            })
+            .map((train) => {
+              const lat = train.latitude || (train.position && train.position.latitude);
+              const lon = train.longitude || (train.position && train.position.longitude);
+              const isSelected = selectedTrainNo === train.train_no;
+              return {
+                type: 'Feature',
+                properties: {
+                  train_no: train.train_no,
+                  train_name: train.train_name || `Train #${train.train_no}`,
+                  is_selected: isSelected ? 1 : 0,
+                  label: `R-${train.train_no}`,
+                  speed: train.speed_kmh ?? train.speed ?? (train.telemetry && train.telemetry.speed) ?? 0,
+                  status: train.train_status || 'RUNNING',
+                },
+                geometry: {
+                  type: 'Point',
+                  coordinates: [Number(lon), Number(lat)],
+                },
+              };
+            })
+        : [];
 
-      if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) {
+    const simTrainsGeoJSON = {
+      type: 'FeatureCollection',
+      features: simTrainFeatures,
+    };
+
+    if (!map.getSource('railway-sim-trains')) {
+      map.addSource('railway-sim-trains', {
+        type: 'geojson',
+        data: simTrainsGeoJSON,
+      });
+
+      // A. WebGL Aura / Halo for selected train
+      map.addLayer({
+        id: 'railway-sim-trains-halo',
+        type: 'circle',
+        source: 'railway-sim-trains',
+        filter: ['==', ['get', 'is_selected'], 1],
+        paint: {
+          'circle-radius': 15,
+          'circle-color': '#00A3C4',
+          'circle-opacity': 0.28,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#00A3C4',
+          'circle-stroke-opacity': 0.7,
+        },
+      });
+
+      // B. WebGL Train Body Circle (GPU rendered)
+      map.addLayer({
+        id: 'railway-sim-trains-circle',
+        type: 'circle',
+        source: 'railway-sim-trains',
+        paint: {
+          'circle-radius': [
+            'case',
+            ['==', ['get', 'is_selected'], 1], 8,
+            6
+          ],
+          'circle-color': [
+            'case',
+            ['==', ['get', 'is_selected'], 1], '#00A3C4',
+            '#1E293B'
+          ],
+          'circle-stroke-width': 2.2,
+          'circle-stroke-color': '#FFFFFF',
+        },
+      });
+
+      // C. WebGL Inner Pin Dot
+      map.addLayer({
+        id: 'railway-sim-trains-core',
+        type: 'circle',
+        source: 'railway-sim-trains',
+        paint: {
+          'circle-radius': 2.5,
+          'circle-color': '#FFFFFF',
+        },
+      });
+
+      // D. WebGL Symbol Text Label (R-12003)
+      map.addLayer({
+        id: 'railway-sim-trains-label',
+        type: 'symbol',
+        source: 'railway-sim-trains',
+        filter: ['==', ['get', 'is_selected'], 1],
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': 10,
+          'text-offset': [0, 1.4],
+          'text-anchor': 'top',
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#0F172A',
+          'text-halo-color': '#FFFFFF',
+          'text-halo-width': 2.5,
+        },
+      });
+
+      // Interactive Click & Hover handlers on the WebGL circle layer
+      map.on('click', 'railway-sim-trains-circle', (e) => {
+        if (e.features && e.features[0]) {
+          const tNo = Number(e.features[0].properties.train_no);
+          if (onSelectTrainRef.current) {
+            onSelectTrainRef.current(tNo);
+          }
+        }
+      });
+
+      map.on('mouseenter', 'railway-sim-trains-circle', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+
+      map.on('mouseleave', 'railway-sim-trains-circle', () => {
+        map.getCanvas().style.cursor = '';
+      });
+    } else {
+      map.getSource('railway-sim-trains').setData(simTrainsGeoJSON);
+    }
+  }, [trains, selectedTrainNo, mapLoaded, showVirtualSim]);
+
+  // 7. Live Verified Satellite GPS Train Tracking Marker & Pathway Overlay
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    try {
+      if (
+        !showLiveFeed ||
+        !liveTrainData ||
+        liveTrainData.lat == null ||
+        liveTrainData.lng == null ||
+        isNaN(liveTrainData.lat) ||
+        isNaN(liveTrainData.lng)
+      ) {
+        if (liveTrainMarkerRef.current) {
+          liveTrainMarkerRef.current.remove();
+          liveTrainMarkerRef.current = null;
+        }
+        if (map.getSource('railway-live-route')) {
+          map.getSource('railway-live-route').setData({ type: 'FeatureCollection', features: [] });
+        }
+        if (map.getSource('railway-live-route-stops')) {
+          map.getSource('railway-live-route-stops').setData({ type: 'FeatureCollection', features: [] });
+        }
         return;
       }
 
-      currentTrainNos.add(trainNo);
-      const isSelected = selectedTrainNo === trainNo;
-      const isDelayed = (train.final_predicted_delay || 0) > 15 || (train.current_accumulated_delay || 0) > 15;
-      const isTier1 = train.priority_tier === 1;
-      const isTier2 = train.priority_tier === 2;
+    const {
+      trainNo,
+      trainName = 'Live Train',
+      lat,
+      lng,
+      speedKmh = 0,
+      bearing = 0,
+      delayMinutes = 0,
+      stationName = 'En Route',
+      isActualPosition = true,
+      routeCoords = [],
+      routeGeoJSON = null,
+      routeStops = [],
+    } = liveTrainData;
 
-      // Unified Color scheme for 2D Vector Train Model
-      const primaryColor = isDelayed ? '#ef4444' : isTier1 ? '#3b82f6' : isTier2 ? '#f43f5e' : '#64748b';
-      const secondaryColor = isDelayed ? '#450a0a' : isTier1 ? '#1e3a8a' : isTier2 ? '#4c0519' : '#1e293b';
-      const strokeColor = isSelected ? '#38bdf8' : '#cbd5e1';
-      const ringClass = isSelected ? 'ring-2 ring-cyan-400 ring-offset-2 ring-offset-[#030e20]' : '';
+    // A. Render or update Live Route Line from RailRadar Route API
+    const effectiveCoords =
+      routeGeoJSON?.geometry?.coordinates && Array.isArray(routeGeoJSON.geometry.coordinates)
+        ? routeGeoJSON.geometry.coordinates
+        : routeCoords;
 
-      const markerHtml = `
-        <div class="train-model-container cursor-pointer transition-all duration-300 hover:scale-125 flex flex-col items-center select-none">
-          <!-- 2D Vector Train Locomotive Model -->
-          <div class="relative flex items-center justify-center p-1 rounded-full bg-[#030e20]/95 border border-slate-700/80 shadow-xl ${ringClass}">
-            <svg width="22" height="22" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <!-- Locomotive Chassis -->
-              <rect x="6" y="4" width="16" height="20" rx="6" fill="${secondaryColor}" stroke="${strokeColor}" stroke-width="1.2" />
-              <!-- Aerodynamic Cab Nose -->
-              <path d="M8 8C8 5.79086 9.79086 4 12 4H16C18.2091 4 20 5.79086 20 8V11H8V8Z" fill="${primaryColor}" />
-              <!-- Windshield Glass -->
-              <rect x="9.5" y="7" width="9" height="3" rx="0.75" fill="#020617" />
-              <!-- Center Livery Stripe -->
-              <rect x="13" y="11" width="2" height="8" rx="0.5" fill="#ffffff" fill-opacity="0.85" />
-              <!-- Headlights -->
-              <circle cx="10" cy="19" r="1.3" fill="${isDelayed ? '#fca5a5' : '#fef08a'}" />
-              <circle cx="18" cy="19" r="1.3" fill="${isDelayed ? '#fca5a5' : '#fef08a'}" />
-              <!-- Front Cowcatcher Bumper -->
-              <line x1="8" y1="21.5" x2="20" y2="21.5" stroke="${primaryColor}" stroke-width="1.6" stroke-linecap="round" />
-            </svg>
-          </div>
+    if (effectiveCoords && effectiveCoords.length >= 2) {
+      const liveRouteGeoJSON = routeGeoJSON
+        ? (routeGeoJSON.type === 'FeatureCollection' ? routeGeoJSON : { type: 'FeatureCollection', features: [routeGeoJSON] })
+        : {
+            type: 'FeatureCollection',
+            features: [
+              {
+                type: 'Feature',
+                properties: { trainNo },
+                geometry: {
+                  type: 'LineString',
+                  coordinates: effectiveCoords,
+                },
+              },
+            ],
+          };
 
-          <!-- Minimal Monospace Train ID Pill -->
-          <div class="mt-0.5 px-1.5 py-0.5 rounded bg-[#030e20]/90 border border-slate-800 shadow-md pointer-events-none">
-            <span class="font-mono text-[9px] font-bold text-slate-200 tracking-tight leading-none">${trainNo}</span>
-          </div>
-        </div>
-      `;
+      let stopFeatures = [];
+      if (Array.isArray(routeStops) && routeStops.length > 0) {
+        stopFeatures = routeStops
+          .filter((s) => s.lng != null && s.lat != null)
+          .map((s, idx) => ({
+            type: 'Feature',
+            properties: { index: idx, name: s.name, code: s.code },
+            geometry: {
+              type: 'Point',
+              coordinates: [Number(s.lng), Number(s.lat)],
+            },
+          }));
+      } else if (effectiveCoords && effectiveCoords.length > 0) {
+        const step = Math.max(1, Math.floor(effectiveCoords.length / 50));
+        stopFeatures = effectiveCoords
+          .filter((_, idx) => idx % step === 0 || idx === effectiveCoords.length - 1)
+          .map((coord, idx) => ({
+            type: 'Feature',
+            properties: { index: idx },
+            geometry: {
+              type: 'Point',
+              coordinates: coord,
+            },
+          }));
+      }
 
-      let marker = markersMapRef.current.get(trainNo);
+      const liveStopsGeoJSON = {
+        type: 'FeatureCollection',
+        features: stopFeatures,
+      };
 
-      if (!marker) {
-        // Create new DOM marker element
-        const el = document.createElement('div');
-        el.className = 'train-marker-wrapper';
-        el.style.zIndex = isSelected ? '40' : '20';
-        el.innerHTML = markerHtml;
-
-        el.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          if (onSelectTrain) {
-            onSelectTrain(trainNo);
-          }
+      if (!map.getSource('railway-live-route')) {
+        map.addSource('railway-live-route', {
+          type: 'geojson',
+          data: liveRouteGeoJSON,
         });
 
-        marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat([lon, lat])
-          .addTo(map);
+        map.addLayer({
+          id: 'railway-live-route-casing',
+          type: 'line',
+          source: 'railway-live-route',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#064e3b',
+            'line-width': 6,
+            'line-opacity': 0.35,
+          },
+        });
 
-        markersMapRef.current.set(trainNo, marker);
+        map.addLayer({
+          id: 'railway-live-route-line',
+          type: 'line',
+          source: 'railway-live-route',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#10B981', // Emerald green live route line
+            'line-width': 3.5,
+            'line-opacity': 0.95,
+          },
+        });
       } else {
-        // Update existing marker position smoothly
-        marker.setLngLat([lon, lat]);
-
-        // Update DOM element content and selection state
-        const el = marker.getElement();
-        el.style.zIndex = isSelected ? '40' : '20';
-        el.innerHTML = markerHtml;
+        map.getSource('railway-live-route').setData(liveRouteGeoJSON);
       }
-    });
 
-    // Remove markers for trains no longer present
-    markersMapRef.current.forEach((marker, trainNo) => {
-      if (!currentTrainNos.has(trainNo)) {
-        marker.remove();
-        markersMapRef.current.delete(trainNo);
+      if (!map.getSource('railway-live-route-stops')) {
+        map.addSource('railway-live-route-stops', {
+          type: 'geojson',
+          data: liveStopsGeoJSON,
+        });
+
+        map.addLayer({
+          id: 'railway-live-route-stops-dots',
+          type: 'circle',
+          source: 'railway-live-route-stops',
+          paint: {
+            'circle-radius': 3.5,
+            'circle-color': '#FFFFFF',
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#10B981',
+          },
+        });
+      } else {
+        map.getSource('railway-live-route-stops').setData(liveStopsGeoJSON);
       }
-    });
-  }, [trains, selectedTrainNo, mapLoaded, onSelectTrain]);
+    }
 
-  // Reset to NDLS-BSB trunk corridor view
+    // B. Render or update Live Train Marker
+    const markerHtml = `
+      <div class="live-gps-train-marker cursor-pointer select-none flex flex-col items-center group relative">
+        <span class="absolute -top-3 -left-3 w-12 h-12 rounded-full bg-emerald-500/25 animate-ping pointer-events-none"></span>
+        <span class="absolute -top-1 -left-1 w-8 h-8 rounded-full bg-emerald-400/35 animate-pulse pointer-events-none"></span>
+        
+        <div class="relative w-7 h-7 rounded-full bg-slate-950 border-2 border-emerald-400 shadow-xl flex items-center justify-center transition-transform group-hover:scale-125 z-10">
+          <svg class="w-4 h-4 text-emerald-400 transition-transform" viewBox="0 0 24 24" fill="currentColor" style="transform: rotate(${bearing}deg);">
+            <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+          </svg>
+        </div>
+
+        <div class="mt-1 px-2 py-0.5 rounded-md bg-slate-950/95 text-emerald-400 border border-emerald-500/80 shadow-lg text-[9px] font-mono font-bold flex items-center gap-1.5 backdrop-blur-md z-20">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0"></span>
+          <span>LIVE #${trainNo}</span>
+          ${speedKmh ? `<span class="text-slate-300 font-normal">· ${speedKmh} km/h</span>` : ''}
+        </div>
+      </div>
+    `;
+
+    const popupHtml = `
+      <div class="p-3 bg-slate-900 text-white rounded-xl shadow-2xl border border-emerald-500/50 min-w-[210px] space-y-1.5 font-sans">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-1">
+          <span class="font-mono text-[10px] font-bold text-emerald-400 flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            LIVE SATELLITE TELEMETRY
+          </span>
+          <span class="text-[9px] font-mono text-slate-400">#${trainNo}</span>
+        </div>
+        <div class="font-bold text-xs text-white truncate">${trainName}</div>
+        <div class="text-[11px] text-slate-300">
+          Current Station: <strong class="text-white">${stationName}</strong>
+        </div>
+        <div class="grid grid-cols-2 gap-1.5 pt-1 text-[10px] font-mono border-t border-slate-800 text-slate-300">
+          <div>Speed: <strong class="text-emerald-400">${speedKmh} km/h</strong></div>
+          <div>Delay: <strong class="${delayMinutes > 0 ? 'text-amber-400' : 'text-emerald-400'}">${delayMinutes > 0 ? `+${delayMinutes}m` : 'On Time'}</strong></div>
+          <div>Bearing: <strong class="text-white">${bearing}°</strong></div>
+          <div>GPS: <strong class="text-emerald-300">${isActualPosition ? 'Verified' : 'Estimated'}</strong></div>
+        </div>
+        <div class="text-[9px] text-slate-400 pt-0.5 font-mono">
+          Coords: ${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E
+        </div>
+      </div>
+    `;
+
+    if (!liveTrainMarkerRef.current) {
+      const el = document.createElement('div');
+      el.className = 'live-train-marker-wrapper';
+      el.style.zIndex = '50';
+      el.innerHTML = markerHtml;
+
+      const popup = new maplibregl.Popup({
+        offset: [0, -20],
+        closeButton: false,
+        className: 'live-telemetry-map-popup',
+      }).setHTML(popupHtml);
+
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([lng, lat])
+        .setPopup(popup)
+        .addTo(map);
+
+      liveTrainMarkerRef.current = marker;
+      liveTrainPopupRef.current = popup;
+    } else {
+      liveTrainMarkerRef.current.setLngLat([lng, lat]);
+      const el = liveTrainMarkerRef.current.getElement();
+      el.innerHTML = markerHtml;
+      if (liveTrainPopupRef.current) {
+        liveTrainPopupRef.current.setHTML(popupHtml);
+      }
+    }
+
+      // C. Camera Flight to Live Train Coordinates on first arrival or train change
+      const trainKey = `${trainNo}-${lat.toFixed(3)}-${lng.toFixed(3)}`;
+      if (lastFlownLiveTrainRef.current !== trainKey) {
+        lastFlownLiveTrainRef.current = trainKey;
+        map.flyTo({
+          center: [lng, lat],
+          zoom: 8.5,
+          essential: true,
+          duration: 1400,
+        });
+      }
+    } catch (err) {
+      console.warn('Live map telemetry render warning:', err);
+    }
+  }, [liveTrainData, mapLoaded, showLiveFeed]);
+
+  const handleCenterLiveTrain = () => {
+    if (mapRef.current && liveTrainData && liveTrainData.lng != null && liveTrainData.lat != null) {
+      mapRef.current.flyTo({
+        center: [liveTrainData.lng, liveTrainData.lat],
+        zoom: 8.5,
+        pitch: 0,
+        bearing: 0,
+        essential: true,
+        duration: 1200,
+      });
+    }
+  };
+
+  // Zoom / View Handlers
+  const handleZoomIn = () => {
+    if (mapRef.current) mapRef.current.zoomIn();
+  };
+
+  const handleZoomOut = () => {
+    if (mapRef.current) mapRef.current.zoomOut();
+  };
+
   const handleResetCorridor = () => {
     if (mapRef.current) {
       mapRef.current.flyTo({
-        center: [80.8, 25.5],
-        zoom: 6.2,
+        center: [80.5, 26.2],
+        zoom: 6.5,
         pitch: 0,
         bearing: 0,
         essential: true,
@@ -384,142 +1028,129 @@ export function MapLibreRailwayMap({
     }
   };
 
-  // Fit all stations across the entire national railway network
   const handleFitAllNetwork = () => {
     if (!mapRef.current) return;
-    if (topology?.stations && topology.stations.length > 0) {
-      let minLon = 180,
-        maxLon = -180,
-        minLat = 90,
-        maxLat = -90;
-      let validCount = 0;
-      topology.stations.forEach((s) => {
-        const lon = s.longitude;
-        const lat = s.latitude;
-        if (lon && lat && !isNaN(lon) && !isNaN(lat)) {
-          if (lon < minLon) minLon = lon;
-          if (lon > maxLon) maxLon = lon;
-          if (lat < minLat) minLat = lat;
-          if (lat > maxLat) maxLat = lat;
-          validCount++;
-        }
-      });
-      if (validCount > 0 && minLon < maxLon && minLat < maxLat) {
-        mapRef.current.fitBounds(
-          [
-            [minLon - 0.8, minLat - 0.8],
-            [maxLon + 0.8, maxLat + 0.8],
-          ],
-          { padding: 50, essential: true, duration: 1200 }
-        );
-        setViewMode('all');
-        return;
+    const stations =
+      topology?.stations && topology.stations.length > 0
+        ? topology.stations
+        : FALLBACK_NATIONAL_STATIONS;
+    let minLon = 180,
+      maxLon = -180,
+      minLat = 90,
+      maxLat = -90;
+    let validCount = 0;
+    stations.forEach((s) => {
+      const lon = s.longitude;
+      const lat = s.latitude;
+      if (lon && lat && !isNaN(lon) && !isNaN(lat)) {
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        validCount++;
       }
-    }
-    // Fallback national bounds (Delhi - Bihar - Bengal - Central - Maharashtra)
-    mapRef.current.fitBounds(
-      [
-        [72.5, 16.5],
-        [89.5, 29.8],
-      ],
-      { padding: 50, essential: true, duration: 1200 }
-    );
-    setViewMode('all');
-  };
-
-  // Focus selected train helper
-  const handleFocusSelectedTrain = () => {
-    if (!selectedTrainNo || !mapRef.current) return;
-    const target = trains.find((t) => t.train_no === selectedTrainNo);
-    if (target) {
-      const lat = target.latitude || (target.position && target.position.latitude);
-      const lon = target.longitude || (target.position && target.position.longitude);
-      if (lat && lon) {
-        mapRef.current.flyTo({
-          center: [lon, lat],
-          zoom: 9.5,
-          essential: true,
-        });
-      }
+    });
+    if (validCount > 0 && minLon < maxLon && minLat < maxLat) {
+      mapRef.current.fitBounds(
+        [
+          [minLon - 0.7, minLat - 0.7],
+          [maxLon + 0.7, maxLat + 0.7],
+        ],
+        { padding: 50, essential: true, duration: 1000 }
+      );
+      setViewMode('all');
     }
   };
 
   return (
-    <div className="w-full h-full relative overflow-hidden rounded-xl">
-      {/* MapLibre WebGL Canvas Container */}
-      <div ref={mapContainerRef} className="w-full h-full min-h-[580px]" />
+    <div className="absolute inset-0 w-full h-full overflow-hidden bg-[#F4F5F7]">
+      {/* 1. MapLibre WebGL Canvas Container */}
+      <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
 
-      {/* Top Viewport Overlay Bar */}
-      <div className="absolute top-0 left-0 right-0 z-10 p-3 sm:p-4 flex flex-wrap items-center justify-between gap-2 bg-gradient-to-b from-slate-950/95 via-slate-950/60 to-transparent pointer-events-none">
-        <div className="flex items-center gap-2 pointer-events-auto bg-slate-950/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800 shadow-md">
-          <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse"></span>
-          <span className="text-xs font-semibold text-white uppercase tracking-wider">
-            {viewMode === 'all'
-              ? 'National NetworkX Topology (184 Stations • 188 Sections)'
-              : 'Live Section Topology: NDLS – BSB Trunk Corridor'}
+      {/* 2. Floating Live GPS Tracking Status Chip (Center Top) */}
+      {showLiveFeed && liveTrainData && liveTrainData.lat != null && liveTrainData.lng != null && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 backdrop-blur-md border border-emerald-500/60 shadow-2xl text-xs text-white pointer-events-auto select-none transition-all">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+          <span className="font-semibold text-[11px] text-emerald-300">
+            Live GPS Active:
           </span>
-        </div>
-        <div className="flex items-center flex-wrap gap-2 text-xs text-slate-300 pointer-events-auto">
-          {/* Toggle Full Network / Corridor View */}
+          <span className="font-mono font-bold text-[11px] text-white">
+            #{liveTrainData.trainNo} {liveTrainData.trainName}
+          </span>
+          <span className="text-slate-400 text-[10px] hidden sm:inline">
+            • {liveTrainData.stationName}
+          </span>
           <button
             type="button"
-            onClick={viewMode === 'all' ? handleResetCorridor : handleFitAllNetwork}
-            className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all flex items-center gap-1 shadow-sm ${
-              viewMode === 'all'
-                ? 'bg-blue-600 border-blue-400 text-white'
-                : 'bg-slate-900/90 hover:bg-slate-800 border-slate-700 text-slate-200'
-            }`}
-            title="View entire national railway network"
+            onClick={handleCenterLiveTrain}
+            className="ml-1 px-2.5 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[10px] flex items-center gap-1 transition-all shadow-xs"
+            title="Fly camera to live train location"
           >
-            <span className="material-symbols-outlined text-[15px]">
-              {viewMode === 'all' ? 'alt_route' : 'public'}
-            </span>
-            <span>{viewMode === 'all' ? 'Trunk Corridor' : 'Full Network'}</span>
+            <span className="material-symbols-outlined text-[13px]">my_location</span>
+            <span>Center</span>
           </button>
-
-          {/* Focus Selected Train */}
-          <button
-            type="button"
-            onClick={handleFocusSelectedTrain}
-            className="px-2.5 py-1.5 rounded-lg bg-blue-950/80 hover:bg-blue-900 border border-blue-500/40 text-blue-200 text-xs font-semibold transition-colors flex items-center gap-1 shadow-sm"
-            title="Pan camera to selected train"
-          >
-            <span className="material-symbols-outlined text-[14px]">center_focus_strong</span>
-            <span>Focus Train</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Bottom Map Legend Overlay */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 p-3 sm:p-4 bg-gradient-to-t from-slate-950/95 via-slate-950/70 to-transparent flex flex-wrap items-center justify-between text-xs text-slate-300 border-t border-slate-800/40 pointer-events-auto">
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <span className="w-3.5 h-1 rounded bg-blue-500"></span>
-            <span>Trunk Track</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 border border-blue-300"></span>
-            <span>Train Model</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 border border-red-300"></span>
-            <span>Delayed (&gt;15m)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full border border-blue-400 bg-slate-900"></span>
-            <span>Station Node ({topology?.stations?.length || 184})</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-slate-400 font-mono text-[11px]">
-            Active Fleet: <strong className="text-blue-400">{trains.length}</strong>
-          </span>
-          {selectedStation && (
-            <span className="text-slate-400 font-mono text-[11px] hidden sm:inline">
-              Selected: <span className="text-slate-200">{selectedStation}</span>
-            </span>
+          {onToggleHideLiveFeed && (
+            <button
+              type="button"
+              onClick={onToggleHideLiveFeed}
+              className="px-2 py-0.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold text-[10px] flex items-center gap-1 transition-all border border-slate-700"
+              title="Hide live feed from map"
+            >
+              <span className="material-symbols-outlined text-[13px]">visibility_off</span>
+              <span>Hide</span>
+            </button>
           )}
         </div>
+      )}
+
+      {/* When live train feed is loaded but hidden from map, provide quick restore button */}
+      {!showLiveFeed && liveTrainData && liveTrainData.lat != null && onToggleHideLiveFeed && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto select-none">
+          <button
+            type="button"
+            onClick={onToggleHideLiveFeed}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900/90 backdrop-blur-md border border-slate-700 shadow-xl text-xs text-slate-300 hover:text-white hover:border-emerald-500/60 transition-all group"
+            title="Restore Live Feed on map"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500/70 group-hover:bg-emerald-400 group-hover:animate-ping" />
+            <span>Live Feed Hidden (#{liveTrainData.trainNo})</span>
+            <span className="text-emerald-400 font-bold ml-1 flex items-center gap-0.5">
+              <span className="material-symbols-outlined text-[14px]">visibility</span>
+              <span>Show</span>
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* 3. Floating Zoom Control Cluster (Fixed Bottom-Right, White Rounded Container with Soft Shadow) */}
+      <div className="absolute bottom-6 right-6 z-30 flex flex-col bg-white border border-slate-200 rounded-lg p-1 shadow-md select-none">
+        <button
+          type="button"
+          onClick={handleZoomIn}
+          className="w-8 h-8 rounded hover:bg-slate-100 flex items-center justify-center text-slate-700 transition-colors"
+          title="Zoom in"
+        >
+          <span className="material-symbols-outlined text-[19px]">add</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleZoomOut}
+          className="w-8 h-8 rounded hover:bg-slate-100 flex items-center justify-center text-slate-700 transition-colors"
+          title="Zoom out"
+        >
+          <span className="material-symbols-outlined text-[19px]">remove</span>
+        </button>
+        <div className="w-full h-[1px] bg-slate-200 my-0.5" />
+        <button
+          type="button"
+          onClick={viewMode === 'all' ? handleResetCorridor : handleFitAllNetwork}
+          className="w-8 h-8 rounded hover:bg-slate-100 flex items-center justify-center text-slate-700 transition-colors"
+          title={viewMode === 'all' ? 'Reset corridor view' : 'Fit network bounds'}
+        >
+          <span className="material-symbols-outlined text-[18px]">
+            {viewMode === 'all' ? 'crop_free' : 'fit_screen'}
+          </span>
+        </button>
       </div>
     </div>
   );

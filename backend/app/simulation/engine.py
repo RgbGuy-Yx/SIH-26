@@ -46,8 +46,8 @@ class SimulationEngine:
         self.graph = railway_graph or load_national_railway_graph(csv_path=self.csv_path)
         self.conflict_engine = conflict_engine or ConflictEngine()
         
-        # Virtual clock initialization
-        start_t = self.config.start_time or datetime(2026, 8, 28, 6, 0, 0)
+        # Virtual clock initialization (defaults to 16:30:00 PM for active multi-train traffic)
+        start_t = self.config.start_time or datetime(2026, 8, 28, 16, 30, 0)
         self.clock = VirtualClock(initial_time=start_t, time_multiplier=self.config.time_multiplier)
 
         # Active Train Entities
@@ -78,6 +78,7 @@ class SimulationEngine:
                     base_date=self.clock.current_time,
                     csv_path=self.csv_path,
                 )
+                entity.update_position(self.clock.current_time)
                 self.trains[t_no] = entity
 
     def start(self) -> None:
@@ -100,8 +101,9 @@ class SimulationEngine:
         """
         Deterministically reset clock, positions, delays, conflicts, and train states.
         """
-        start_t = initial_time or self.config.start_time or datetime(2026, 8, 28, 6, 0, 0)
+        start_t = initial_time or self.config.start_time or datetime(2026, 8, 28, 16, 30, 0)
         self.clock.reset(initial_time=start_t)
+        self.clock.start()
         self.conflict_engine.clear()
         self.active_conflicts.clear()
         self.load_trains(self.config.selected_train_ids)

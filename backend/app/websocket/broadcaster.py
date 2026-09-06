@@ -38,9 +38,15 @@ class SimulationBroadcaster:
 
         while self._running:
             try:
-                # Only broadcast if there are connected clients
-                if manager.connection_count > 0:
+                # Always tick simulation state if running, so virtual time and train positions advance continuously
+                delta_snapshot = None
+                if simulation_service.is_running:
                     delta_snapshot = simulation_service.get_delta_state_snapshot()
+
+                # Broadcast delta over websocket to connected clients
+                if manager.connection_count > 0:
+                    if delta_snapshot is None:
+                        delta_snapshot = simulation_service.get_delta_state_snapshot()
                     payload = {
                         "type": "telemetry_delta",
                         "data": delta_snapshot

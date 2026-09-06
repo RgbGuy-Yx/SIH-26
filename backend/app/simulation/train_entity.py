@@ -79,6 +79,9 @@ class TrainEntity:
         base_day = self.base_date.date()
         last_known_time = datetime.combine(base_day, datetime.min.time()) + timedelta(hours=6)
 
+        # For simulation demonstration, align morning services (22500, 56903) to prime OCC afternoon simulation window
+        time_shift_hours = 10 if self.train_no == 22500 else (16 if self.train_no == 56903 else 0)
+
         for i, stop in enumerate(self.stops):
             raw_elapsed = stop.get("elapsed_minutes", 0.0)
             if raw_elapsed is None or (isinstance(raw_elapsed, float) and (raw_elapsed != raw_elapsed)):
@@ -86,7 +89,10 @@ class TrainEntity:
             else:
                 elapsed_mins = float(raw_elapsed)
 
-            day_offset = int(elapsed_mins // 1440) if elapsed_mins >= 0 else 0
+            arr_day = stop.get("arrival_day")
+            dep_day = stop.get("departure_day")
+            arr_day_offset = max(0, int(float(arr_day) - 1)) if (arr_day is not None and arr_day == arr_day) else int(elapsed_mins // 1440)
+            dep_day_offset = max(0, int(float(dep_day) - 1)) if (dep_day is not None and dep_day == dep_day) else int(elapsed_mins // 1440)
 
             arr_str = stop.get("scheduled_arrival")
             dept_str = stop.get("scheduled_departure")
@@ -97,15 +103,15 @@ class TrainEntity:
             if arr_str and arr_str != "None" and ":" in str(arr_str):
                 parts = str(arr_str).split(":")
                 hh, mm = int(parts[0]), int(parts[1])
-                sched_arr = datetime.combine(base_day + timedelta(days=day_offset), datetime.min.time()) + timedelta(
-                    hours=hh, minutes=mm
+                sched_arr = datetime.combine(base_day + timedelta(days=arr_day_offset), datetime.min.time()) + timedelta(
+                    hours=hh + time_shift_hours, minutes=mm
                 )
 
             if dept_str and dept_str != "None" and ":" in str(dept_str):
                 parts = str(dept_str).split(":")
                 hh, mm = int(parts[0]), int(parts[1])
-                sched_dept = datetime.combine(base_day + timedelta(days=day_offset), datetime.min.time()) + timedelta(
-                    hours=hh, minutes=mm
+                sched_dept = datetime.combine(base_day + timedelta(days=dep_day_offset), datetime.min.time()) + timedelta(
+                    hours=hh + time_shift_hours, minutes=mm
                 )
 
             # If both arrival and departure are missing, interpolate from last known stop time
@@ -189,11 +195,19 @@ class TrainEntity:
         sched_dep = self.current_stop["scheduled_departure"] or self.base_date
         hour_of_day = sched_dep.hour
 
+        # Determine active weather: explicit dynamic weather override, or stop's dataset meteorological record
+        active_weather = self.current_weather
+        if active_weather is None and self.current_stop.get("weather"):
+            try:
+                active_weather = WeatherInput(**self.current_stop["weather"])
+            except Exception:
+                active_weather = None
+
         inference_input = StationInferenceInput(
             hour_of_day=hour_of_day,
             current_accumulated_delay=float(self.current_accumulated_delay),
             priority_tier=self.priority_tier,
-            weather=self.current_weather,
+            weather=active_weather,
             is_origin=(self.current_stop_idx == 0 and self.current_accumulated_delay == 0.0),
         )
 
@@ -231,30 +245,72 @@ class TrainEntity:
             self.route_progress = 0.0
             return
 
-        # Case 2: Train has completed all stops
+        # Case 2: Multi-stop catch-up loop (advances through any stations already passed)
+        while self.current_stop_idx < self.total_stops - 1:
+            c_stop = self.current_stop
+            n_stop = self.next_stop
+            if not n_stop:
+                break
+
+            effective_dep = (c_stop["scheduled_departure"] or sim_time) + timedelta(
+                minutes=self.current_accumulated_delay + self.conflict_delay
+            )
+            effective_arr = (n_stop["scheduled_arrival"] or sim_time) + timedelta(
+                minutes=self.final_predicted_delay
+            )
+            if effective_arr <= effective_dep:
+                effective_arr = effective_dep + timedelta(minutes=10.0)
+
+            # If simulation time has reached or passed next station, advance stop index
+            if sim_time >= effective_arr:
+                self.current_accumulated_delay = self.final_predicted_delay
+                self.conflict_delay = 0.0
+                self.current_stop_idx += 1
+                if self.current_stop_idx >= self.total_stops - 1:
+                    break
+                self._predict_next_hop_delay()
+            else:
+                # Found the active section
+                break
+
+        # Case 3: Train has completed all stops
         if self.current_stop_idx >= self.total_stops - 1:
+            dest_arr = self.destination_stop["scheduled_arrival"] or self.destination_stop["scheduled_departure"] or sim_time
+            # Auto-loop in simulation mode: if 15 mins passed since arrival, cycle back for continuous demonstration
+            if sim_time >= (dest_arr + timedelta(minutes=15)):
+                self.current_stop_idx = 0
+                self.current_accumulated_delay = 0.0
+                self.conflict_delay = 0.0
+                # Shift base date to keep train running in cycle
+                self.base_date = sim_time
+                self._parsed_stops = self._initialize_stop_schedule()
+                self._predict_next_hop_delay()
+                self.status = TrainStatus.AT_STATION
+                self.latitude = float(self.origin_stop["latitude"])
+                self.longitude = float(self.origin_stop["longitude"])
+                self.route_progress = 0.0
+                return
+
             self.status = TrainStatus.COMPLETED
             self.latitude = float(self.destination_stop["latitude"])
             self.longitude = float(self.destination_stop["longitude"])
             self.route_progress = 1.0
             return
 
-        # Case 3: In transit across current section (Hop: current_stop -> next_stop)
+        # Case 4: Active section (current_stop -> next_stop)
         c_stop = self.current_stop
         n_stop = self.next_stop
 
-        # Simulated departure from current stop includes previous delay + any conflict holding time
         effective_dep = (c_stop["scheduled_departure"] or sim_time) + timedelta(
             minutes=self.current_accumulated_delay + self.conflict_delay
         )
-        # Simulated arrival at next stop includes predicted total delay
-        effective_arr = (n_stop["scheduled_arrival"] or sim_time) + timedelta(minutes=self.final_predicted_delay)
-
-        # Ensure valid non-negative time span
+        effective_arr = (n_stop["scheduled_arrival"] or sim_time) + timedelta(
+            minutes=self.final_predicted_delay
+        )
         if effective_arr <= effective_dep:
             effective_arr = effective_dep + timedelta(minutes=10.0)
 
-        # 3A: Train is waiting at station before departure
+        # 4A: Waiting at station before departure
         if sim_time < effective_dep:
             if self.conflict_delay > 0.0:
                 self.status = TrainStatus.HOLDING
@@ -265,15 +321,15 @@ class TrainEntity:
             self.route_progress = 0.0
             return
 
-        # 3B: Train is moving on track between stations
+        # 4B: Moving between stations on track section
         if effective_dep <= sim_time < effective_arr:
-            total_duration = (effective_arr - effective_dep).total_seconds()
+            total_duration = max(1.0, (effective_arr - effective_dep).total_seconds())
             elapsed = (sim_time - effective_dep).total_seconds()
 
             progress = max(0.0, min(1.0, elapsed / total_duration))
             self.route_progress = round(progress, 4)
 
-            # Linear geographic interpolation
+            # Linear geographic interpolation between station coordinates
             lat1, lon1 = float(c_stop["latitude"]), float(c_stop["longitude"])
             lat2, lon2 = float(n_stop["latitude"]), float(n_stop["longitude"])
 
@@ -285,27 +341,6 @@ class TrainEntity:
             else:
                 self.status = TrainStatus.RUNNING
             return
-
-        # 3C: Train has arrived at or passed next_stop -> Transition to next stop
-        if sim_time >= effective_arr:
-            # Propagate delay: final delay at stop N becomes accumulated delay for next hop N -> N+1
-            self.current_accumulated_delay = self.final_predicted_delay
-            self.conflict_delay = 0.0
-            self.current_stop_idx += 1
-
-            if self.current_stop_idx >= self.total_stops - 1:
-                # Reached final destination
-                self.status = TrainStatus.COMPLETED
-                self.latitude = float(self.destination_stop["latitude"])
-                self.longitude = float(self.destination_stop["longitude"])
-                self.route_progress = 1.0
-            else:
-                # Reached intermediate station; predict next hop
-                self.status = TrainStatus.AT_STATION
-                self.latitude = float(self.current_stop["latitude"])
-                self.longitude = float(self.current_stop["longitude"])
-                self.route_progress = 0.0
-                self._predict_next_hop_delay()
 
     def get_state(self, sim_time: datetime) -> TrainSimulationState:
         """Assemble current state into a map-ready TrainSimulationState schema."""
@@ -335,6 +370,50 @@ class TrainEntity:
                     "predicted_eta": s_pred_str,
                     "distance_km": round(float(s_data.get("distance_km", 0.0) or 0.0), 1),
                 })
+
+        # Assemble full sequence of all stations along route with scheduled and estimated ETA
+        all_stops = []
+        for idx, s_data in enumerate(self._parsed_stops):
+            s_arr = s_data.get("scheduled_arrival")
+            s_dep = s_data.get("scheduled_departure")
+            s_arr_str = s_arr.strftime("%Y-%m-%d %H:%M:%S") if s_arr else None
+            s_dep_str = s_dep.strftime("%Y-%m-%d %H:%M:%S") if s_dep else None
+
+            if idx < self.current_stop_idx:
+                stop_status = "DEPARTED"
+                pred_arr_str = s_arr_str
+                pred_dep_str = s_dep_str
+            elif idx == self.current_stop_idx:
+                stop_status = "AT_STATION" if self.status == TrainStatus.AT_STATION else "DEPARTED"
+                pred_arr_str = s_arr_str
+                pred_dep = (s_dep + timedelta(minutes=self.final_predicted_delay)) if s_dep else None
+                pred_dep_str = pred_dep.strftime("%Y-%m-%d %H:%M:%S") if pred_dep else None
+            elif idx == self.current_stop_idx + 1:
+                stop_status = "NEXT_STOP"
+                pred_arr = (s_arr + timedelta(minutes=self.final_predicted_delay)) if s_arr else None
+                pred_arr_str = pred_arr.strftime("%Y-%m-%d %H:%M:%S") if pred_arr else None
+                pred_dep = (s_dep + timedelta(minutes=self.final_predicted_delay)) if s_dep else None
+                pred_dep_str = pred_dep.strftime("%Y-%m-%d %H:%M:%S") if pred_dep else None
+            else:
+                stop_status = "UPCOMING"
+                pred_arr = (s_arr + timedelta(minutes=self.final_predicted_delay)) if s_arr else None
+                pred_arr_str = pred_arr.strftime("%Y-%m-%d %H:%M:%S") if pred_arr else None
+                pred_dep = (s_dep + timedelta(minutes=self.final_predicted_delay)) if s_dep else None
+                pred_dep_str = pred_dep.strftime("%Y-%m-%d %H:%M:%S") if pred_dep else None
+
+            all_stops.append({
+                "stop_no": s_data.get("stop_no", idx + 1),
+                "station_code": s_data["station_code"],
+                "station_name": s_data.get("station_name", s_data["station_code"]),
+                "scheduled_arrival": s_arr_str,
+                "scheduled_departure": s_dep_str,
+                "predicted_eta": pred_arr_str or s_dep_str,
+                "predicted_departure": pred_dep_str,
+                "distance_km": round(float(s_data.get("distance_km", 0.0) or 0.0), 1),
+                "platform": s_data.get("platform", f"PF {(idx % 4) + 1}"),
+                "status": stop_status,
+                "delay_minutes": int(round(self.final_predicted_delay)) if idx >= self.current_stop_idx else 0,
+            })
 
         # Compute dynamic operational speed in km/h based on status and priority tier
         if self.status in (TrainStatus.COMPLETED, TrainStatus.ARRIVED, TrainStatus.AT_STATION, TrainStatus.NOT_STARTED, TrainStatus.HOLDING):
@@ -380,6 +459,7 @@ class TrainEntity:
             latitude=self.latitude,
             longitude=self.longitude,
             upcoming_stops=upcoming,
+            all_stops=all_stops,
             scheduled_arrival=sched_arr_str,
             scheduled_departure=sched_dep_str,
             simulated_arrival=eta_str,

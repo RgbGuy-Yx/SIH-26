@@ -16,6 +16,7 @@ export function DashboardLayout() {
     resumeSimulation,
     resetSimulation,
     activeConflicts,
+    wsConnected,
   } = useSimulation();
 
   const handleLogout = () => {
@@ -25,19 +26,22 @@ export function DashboardLayout() {
 
   // Format virtual simulation timestamp
   const formatSimTime = (isoString) => {
-    if (!isoString) return '28 Aug 2026, 06:00:00';
+    if (!isoString) return '28 Aug, 06:00:00';
     try {
       const d = new Date(isoString);
       if (isNaN(d.getTime())) return isoString;
-      return d.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      }) + ', ' + d.toLocaleTimeString('en-GB', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
+      return (
+        d.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+        }) +
+        ', ' +
+        d.toLocaleTimeString('en-GB', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        })
+      );
     } catch {
       return isoString;
     }
@@ -46,68 +50,75 @@ export function DashboardLayout() {
   const navItems = [
     {
       path: '/control-room',
-      label: 'Live Map',
-      icon: 'radar',
-      badge: null
+      label: 'MAP VIEW',
+      icon: 'map',
+      badge: null,
     },
     {
       path: '/control-room/trains',
-      label: 'Trains',
+      label: 'TRAINS',
       icon: 'directions_railway',
-      badge: null
+      badge: null,
     },
     {
       path: '/control-room/alerts-and-conflicts',
-      label: 'Alerts & Conflicts',
+      label: 'ALERTS & CONFLICTS',
       icon: 'warning',
       badge: activeConflicts && activeConflicts.length > 0 ? String(activeConflicts.length) : null,
-      badgeColor: 'bg-error-container text-on-error-container'
     },
     {
       path: '/control-room/settings',
-      label: 'Settings',
+      label: 'SETTINGS',
       icon: 'settings',
-      badge: null
-    }
+      badge: null,
+    },
   ];
 
   return (
-    <div className="min-h-screen bg-background text-on-surface flex flex-col font-sans antialiased">
-      {/* Sidebar Navigation */}
-      <aside className="fixed left-0 top-0 h-full w-64 bg-surface-container-lowest z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.4)] border-r border-slate-800/60">
-        <div className="flex flex-col">
-          {/* Logo & Ops Node */}
-          <div className="h-16 px-4 flex items-center gap-3 bg-surface-container-lowest border-b border-slate-800/40">
-            <div className="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-primary shadow-[0_0_12px_rgba(46,92,230,0.35)]">
-              <span className="material-symbols-outlined text-[20px]">train</span>
+    <div className="h-screen overflow-hidden bg-[#F4F6F8] text-slate-800 flex flex-col font-sans antialiased">
+      {/* 1. Clean Top Navigation Header (Inspired by Konux reference design) */}
+      <header className="shrink-0 h-14 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between shadow-xs z-40">
+        {/* Left: Brand Mark + Primary Navigation Tabs */}
+        <div className="flex items-center gap-6 md:gap-8 h-full">
+          {/* Brand Logo */}
+          <NavLink to="/control-room" className="flex items-center gap-2.5 group">
+            <div className="w-7 h-7 rounded bg-[#0284C7] flex items-center justify-center text-white shadow-xs">
+              {/* Geometric clean polygon icon */}
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+              </svg>
             </div>
-            <div className="flex flex-col">
-              <span className="font-bold text-sm text-on-surface tracking-tight uppercase">RailRadar</span>
-              <span className="text-[11px] font-mono text-outline tracking-wider uppercase">
-                {currentUser?.badge || 'Ops Node 01'}
+            <div className="flex items-center gap-1.5">
+              <span className="font-extrabold text-sm text-slate-900 tracking-wider uppercase font-sans">
+                RailRadar
+              </span>
+              <span className="hidden sm:inline-block text-[10px] font-mono px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded">
+                OPS
               </span>
             </div>
-          </div>
+          </NavLink>
 
-          {/* Navigation Links */}
-          <nav className="flex flex-col gap-1 p-3 mt-2">
+          {/* Navigation Links (Horizontal minimal tab style) */}
+          <nav className="flex items-center h-full gap-1 sm:gap-2">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path;
+              const isActive =
+                item.path === '/control-room'
+                  ? location.pathname === '/control-room'
+                  : location.pathname.startsWith(item.path);
+
               return (
                 <NavLink
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center justify-between px-4 py-2.5 rounded-lg transition-all text-sm font-medium ${isActive
-                      ? 'bg-primary-container text-on-primary-container font-semibold shadow-[0_0_12px_rgba(46,92,230,0.35)]'
-                      : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                    }`}
+                  className={`h-full flex items-center gap-1.5 px-3 border-b-2 text-xs font-semibold tracking-wide transition-all ${
+                    isActive
+                      ? 'border-[#0284C7] text-slate-950 font-bold'
+                      : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
+                  }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-                    <span>{item.label}</span>
-                  </div>
+                  <span>{item.label}</span>
                   {item.badge && (
-                    <span className={`px-2 py-0.5 rounded-lg text-xs font-semibold ${item.badgeColor || 'bg-blue-900 text-blue-200'}`}>
+                    <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-red-100 text-red-700">
                       {item.badge}
                     </span>
                   )}
@@ -117,104 +128,82 @@ export function DashboardLayout() {
           </nav>
         </div>
 
-        {/* Footer Brand Badge */}
-        <div className="p-3 m-3 rounded-lg bg-surface-container-low border border-slate-800/60">
-          <div className="flex items-start gap-2.5">
-            <span className="material-symbols-outlined text-primary text-[20px] shrink-0">shield</span>
-            <p className="text-xs text-outline leading-tight">
-              Indian Railways — Control Room Ops Operations Active.
-            </p>
+        {/* Right: Simulation Controls & Utility Toolbar */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Simulation Clock & Controls */}
+          <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded bg-slate-50 border border-slate-200 text-xs">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                wsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+              }`}
+              title={wsConnected ? 'WebSocket Live Feed Synced' : 'Syncing Feed'}
+            />
+            <span className="font-mono text-slate-700 text-[11px]">
+              {formatSimTime(simulationTime)}
+            </span>
+            <span className="font-mono text-[10px] font-bold px-1 rounded bg-slate-200/80 text-slate-700">
+              {speedMultiplier}x
+            </span>
+          </div>
+
+          {/* Mini Simulation Controls */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={!isRunning || isPaused ? resumeSimulation : pauseSimulation}
+              className={`p-1.5 rounded border text-xs font-semibold transition-all flex items-center justify-center ${
+                !isRunning || isPaused
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
+              }`}
+              title={!isRunning || isPaused ? 'Resume Simulation' : 'Pause Simulation'}
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {!isRunning || isPaused ? 'play_arrow' : 'pause'}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => resetSimulation()}
+              className="p-1.5 rounded border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs transition-all"
+              title="Reset Simulation Clock & Delays"
+            >
+              <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+            </button>
+          </div>
+
+          <div className="h-4 w-[1px] bg-slate-200 mx-1 hidden sm:block" />
+
+          {/* Language selector chip (like reference image EN ⌵) */}
+          <div className="hidden sm:flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded cursor-pointer transition-colors">
+            <span>EN</span>
+            <span className="material-symbols-outlined text-[14px]">expand_more</span>
+          </div>
+
+          {/* User Profile Avatar & Logout */}
+          <div className="flex items-center gap-2 pl-1">
+            <div
+              className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs border border-slate-300 select-none"
+              title={currentUser?.name || 'Controller'}
+            >
+              {currentUser?.avatar || 'CTL'}
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="p-1.5 rounded text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
+              title="Logout from Control Room"
+            >
+              <span className="material-symbols-outlined text-[18px]">logout</span>
+            </button>
           </div>
         </div>
-      </aside>
+      </header>
 
-      {/* Main Content Area */}
-      <div className="pl-64 flex-1 flex flex-col">
-        {/* Top Header Bar */}
-        <header className="fixed top-0 left-64 right-0 h-16 bg-surface-container-low/95 backdrop-blur-xl z-40 px-6 flex items-center justify-between border-b border-slate-800/60 shadow-[0_1px_8px_rgba(0,0,0,0.2)]">
-          <div className="flex items-center gap-4">
-            <div className="w-9 h-9 rounded-lg bg-surface-container-high flex items-center justify-center text-primary">
-              <span className="material-symbols-outlined text-[24px]">tram</span>
-            </div>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-sm text-on-surface uppercase tracking-tight">Indian Railways</span>
-                <span className="px-2 py-0.5 rounded-lg bg-secondary-container text-on-secondary-container text-[11px] uppercase tracking-wider font-semibold">
-                  Control Room Mode
-                </span>
-              </div>
-              <span className="text-xs text-outline">Tactical Rail Control Operations Center</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            {/* Simulation Time Clock */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-slate-800 text-xs font-mono text-on-surface">
-              <span className="material-symbols-outlined text-primary text-[18px]">schedule</span>
-              <span>{formatSimTime(simulationTime)}</span>
-              <span className="text-[11px] font-mono text-tertiary px-1.5 py-0.5 rounded bg-surface-container-high">
-                ({speedMultiplier}x speed)
-              </span>
-            </div>
-
-            {/* Controls */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={!isRunning || isPaused ? resumeSimulation : pauseSimulation}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  !isRunning || isPaused
-                    ? 'bg-emerald-950 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900'
-                    : 'bg-surface-container-high text-on-surface hover:bg-surface-bright'
-                }`}
-                title={!isRunning || isPaused ? 'Resume Simulation' : 'Pause Simulation'}
-              >
-                <span className="material-symbols-outlined text-[16px]">
-                  {!isRunning || isPaused ? 'play_arrow' : 'pause'}
-                </span>
-                <span>{!isRunning || isPaused ? 'Resume' : 'Pause'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => resetSimulation()}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-error-container text-on-error-container text-xs font-semibold hover:bg-error transition-all shadow-[0_0_10px_rgba(229,72,77,0.3)]"
-                title="Reset Simulation Clock & Delays"
-              >
-                <span className="material-symbols-outlined text-[16px]">restart_alt</span>
-                <span>Reset</span>
-              </button>
-            </div>
-
-            {/* Controller Profile & Logout */}
-            <div className="pl-3 border-l border-slate-800 flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-blue-600/30 text-blue-300 font-bold flex items-center justify-center text-xs border border-blue-500/40">
-                  {currentUser?.avatar || 'CTL'}
-                </div>
-                <div className="hidden lg:flex flex-col text-xs">
-                  <span className="font-semibold text-on-surface">{currentUser?.name || 'Controller'}</span>
-                  <span className="text-[10px] text-outline font-mono">{currentUser?.id || 'CTL-8041'}</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface-container-high hover:bg-error-container text-on-surface hover:text-on-error-container text-xs font-medium border border-slate-800 transition-all"
-                title="Logout from Control Room"
-              >
-                <span className="material-symbols-outlined text-[16px]">logout</span>
-                <span className="hidden sm:inline">Logout</span>
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Dynamic Route Page Body */}
-        <main className="pt-16 flex-1 bg-background">
-          <Outlet />
-        </main>
-      </div>
+      {/* 2. Main Workspace Body */}
+      <main className="flex-1 min-h-0 flex flex-col bg-[#F4F6F8] overflow-hidden">
+        <Outlet />
+      </main>
     </div>
   );
 }

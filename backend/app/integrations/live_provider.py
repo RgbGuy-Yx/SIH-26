@@ -5,6 +5,9 @@ Parses both success and structured JSON error envelopes (404 NOT_FOUND, 400 BAD_
 """
 
 import os
+import time
+import json
+from pathlib import Path
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -47,6 +50,95 @@ class LiveTrainStatus(BaseModel):
 LiveStatusResponse = LiveTrainStatus
 
 
+class TrainRouteCache:
+    """
+    24-hour in-memory and persistent disk cache for static train route GeoJSON.
+    Eliminates repetitive downloading of 2MB+ LineString coordinates from RailRadar API.
+    """
+    TTL_SECONDS = 24 * 3600  # 24 Hours
+
+    def __init__(self, cache_dir: Optional[Path] = None):
+        self._memory_cache: Dict[str, Dict[str, Any]] = {}
+        if cache_dir is None:
+            self.cache_dir = Path(__file__).resolve().parents[2] / ".cache" / "train_routes"
+        else:
+            self.cache_dir = cache_dir
+
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Could not initialize disk cache directory at {self.cache_dir}: {e}")
+
+    def _get_key(self, train_no: int, stops: bool = True) -> str:
+        return f"{train_no}_{'stops' if stops else 'nostops'}"
+
+    def get(self, train_no: int, stops: bool = True, ignore_expiry: bool = False) -> Optional[Dict[str, Any]]:
+        key = self._get_key(train_no, stops)
+        now = time.time()
+
+        # 1. Check in-memory cache
+        if key in self._memory_cache:
+            entry = self._memory_cache[key]
+            age = now - entry["timestamp"]
+            if ignore_expiry or age < self.TTL_SECONDS:
+                logger.info(f"[CACHE HIT - MEMORY] Route GeoJSON for #{train_no} (age: {age / 3600:.1f}h / 24h TTL)")
+                return entry["payload"]
+
+        # 2. Check persistent disk cache
+        disk_file = self.cache_dir / f"{key}.json"
+        if disk_file.exists():
+            try:
+                mtime = disk_file.stat().st_mtime
+                age = now - mtime
+                if ignore_expiry or age < self.TTL_SECONDS:
+                    with open(disk_file, "r", encoding="utf-8") as f:
+                        payload = json.load(f)
+                    self._memory_cache[key] = {"timestamp": mtime, "payload": payload}
+                    logger.info(f"[CACHE HIT - DISK] Route GeoJSON for #{train_no} loaded from {disk_file.name} (age: {age / 3600:.1f}h)")
+                    return payload
+            except Exception as e:
+                logger.warning(f"Failed to read route disk cache for train {train_no}: {e}")
+
+        return None
+
+    def set(self, train_no: int, payload: Dict[str, Any], stops: bool = True) -> None:
+        if not isinstance(payload, dict) or not payload.get("success"):
+            return
+
+        key = self._get_key(train_no, stops)
+        now = time.time()
+
+        # Save to memory cache
+        self._memory_cache[key] = {"timestamp": now, "payload": payload}
+
+        # Persist to disk
+        try:
+            disk_file = self.cache_dir / f"{key}.json"
+            with open(disk_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            size_kb = disk_file.stat().st_size / 1024
+            logger.info(f"[CACHE STORE] Cached 24-hr route GeoJSON for train {train_no} ({size_kb:.1f} KB written to {disk_file.name})")
+        except Exception as e:
+            logger.warning(f"Failed to persist route disk cache for train {train_no}: {e}")
+
+    def clear(self, train_no: Optional[int] = None) -> None:
+        if train_no is not None:
+            for k in [self._get_key(train_no, True), self._get_key(train_no, False)]:
+                self._memory_cache.pop(k, None)
+                f = self.cache_dir / f"{k}.json"
+                if f.exists():
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+        else:
+            self._memory_cache.clear()
+
+
+# Global Singleton Route Cache
+route_cache = TrainRouteCache()
+
+
 class LiveTrainProvider(ABC):
     """Abstract interface for external live train status providers."""
 
@@ -54,6 +146,10 @@ class LiveTrainProvider(ABC):
     async def get_live_train_status(self, train_no: int) -> LiveTrainStatus:
         """Fetch and normalize real-time live running status for a train."""
         pass
+
+    async def get_train_route(self, train_no: int, stops: bool = True, force_refresh: bool = False) -> Dict[str, Any]:
+        """Fetch official train track route geometry & stations."""
+        return {"success": False, "error": "Not implemented for provider"}
 
     async def get_live_status(self, train_no: int) -> LiveTrainStatus:
         """Convenience alias for get_live_train_status."""
@@ -67,6 +163,7 @@ class RailRadarProvider(LiveTrainProvider):
     API Specifications:
       - Base URL: https://api.railradar.in/v1
       - Live Train Endpoint: GET /v1/trains/{number}/live
+      - Train Route Endpoint: GET /v1/trains/{number}/route?stops=true
       - Auth Headers: Authorization: Bearer <key>  or  x-api-key: <key>
       - Parameters:
           * date: optional YYYY-MM-DD
@@ -81,10 +178,73 @@ class RailRadarProvider(LiveTrainProvider):
             raw_url = f"{raw_url}/v1"
         self.base_url = raw_url
 
+    async def get_train_route(self, train_no: int, stops: bool = True, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Fetch official train track GIS geometry & stops from RailRadar:
+        GET https://api.railradar.in/v1/trains/{number}/route?stops=true
+
+        Cached for 24 hours in-memory and on disk to eliminate redundant 2MB LineString downloads.
+        """
+        # 1. Check 24-hour cache first
+        if not force_refresh:
+            cached = route_cache.get(train_no, stops=stops)
+            if cached is not None:
+                return cached
+
+        # 2. Cache miss or forced refresh: query external RailRadar endpoint
+        current_key = self.api_key
+        url = f"{self.base_url}/trains/{train_no}/route"
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "RailwayIntelligenceEngine/1.0",
+        }
+        if current_key:
+            headers["Authorization"] = f"Bearer {current_key}" if not current_key.startswith("Bearer ") else current_key
+            headers["x-api-key"] = current_key
+
+        params = {}
+        if stops:
+            params["stops"] = "true"
+
+        try:
+            logger.info(f"[CACHE MISS] Fetching 2MB route GeoJSON from RailRadar for train #{train_no}...")
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.get(url, headers=headers, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    if isinstance(data, dict) and data.get("success"):
+                        route_cache.set(train_no, data, stops=stops)
+                    return data
+                else:
+                    logger.warning(f"RailRadar route query for train {train_no} returned {response.status_code}: {response.text}")
+                    stale = route_cache.get(train_no, stops=stops, ignore_expiry=True)
+                    if stale is not None:
+                        logger.info(f"[STALE CACHE FALLBACK] Serving stale route cache for #{train_no} after HTTP {response.status_code}")
+                        return stale
+                    return {"success": False, "error": f"HTTP {response.status_code}", "detail": response.text}
+        except Exception as e:
+            logger.error(f"Failed to fetch route for train {train_no}: {e}")
+            stale = route_cache.get(train_no, stops=stops, ignore_expiry=True)
+            if stale is not None:
+                logger.info(f"[STALE CACHE FALLBACK] Serving stale route cache for #{train_no} after exception")
+                return stale
+            return {"success": False, "error": str(e)}
+
     @property
     def api_key(self) -> Optional[str]:
         """Dynamically read API key from environment variable or explicit config."""
-        return self._explicit_api_key or os.environ.get("RAILRADAR_API_KEY") or settings.RAILRADAR_API_KEY
+        key = self._explicit_api_key or os.environ.get("RAILRADAR_API_KEY") or settings.RAILRADAR_API_KEY
+        if not key:
+            try:
+                from dotenv import dotenv_values
+                from pathlib import Path
+                env_path = Path(__file__).resolve().parents[2] / ".env"
+                if env_path.exists():
+                    env_dict = dotenv_values(env_path)
+                    key = env_dict.get("RAILRADAR_API_KEY")
+            except Exception:
+                pass
+        return key
 
     async def get_live_train_status(
         self,
@@ -212,6 +372,9 @@ class RailRadarProvider(LiveTrainProvider):
                 if isinstance(cur_loc, dict):
                     lat = cur_loc.get("lat") or cur_loc.get("latitude")
                     lon = cur_loc.get("lng") or cur_loc.get("lon") or cur_loc.get("longitude")
+                    if (lat is None or lon is None) and isinstance(cur_loc.get("coordinates"), dict):
+                        lat = cur_loc["coordinates"].get("lat")
+                        lon = cur_loc["coordinates"].get("lng")
 
                 # If coordinates not explicitly in currentLocation, extract or interpolate from route array
                 route_stops = data.get("route", [])
@@ -237,6 +400,25 @@ class RailRadarProvider(LiveTrainProvider):
 
                 last_updated = data.get("lastUpdatedAt") or data.get("last_updated") or datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
                 exceptions = data.get("exceptions")
+
+                # Fetch official train track GIS geometry & stops from RailRadar Route API:
+                # GET https://api.railradar.in/v1/trains/{number}/route?stops=true
+                try:
+                    route_payload = await self.get_train_route(train_no, stops=True)
+                    if isinstance(route_payload, dict) and route_payload.get("success"):
+                        r_data = route_payload.get("data", {})
+                        if "geojson" in r_data:
+                            data["route_geojson"] = r_data["geojson"]
+                        if "stops" in r_data:
+                            data["route_stops"] = r_data["stops"]
+                            # If lat or lon not yet resolved, snap to current station in route stops
+                            if (lat is None or lon is None) and current_station != "UNKNOWN":
+                                st_match = next((s for s in r_data["stops"] if isinstance(s, dict) and s.get("code") == current_station), None)
+                                if st_match and st_match.get("lat") and st_match.get("lng"):
+                                    lat = float(st_match["lat"])
+                                    lon = float(st_match["lng"])
+                except Exception as route_err:
+                    logger.warning(f"Could not append RailRadar route geometry for train {train_no}: {route_err}")
 
                 return LiveTrainStatus(
                     success=True,
@@ -392,6 +574,73 @@ class MockLiveProvider(LiveTrainProvider):
         22500: {"name": "VANDE BHARAT EX", "station": "DDU", "next": "SSM", "delay": 2.0, "speed": 115.0, "lat": 25.2818, "lon": 83.1189, "bearing": 98.0},
         12301: {"name": "KOLKATA RAJDHNI", "station": "HWH", "next": "ASN", "delay": 14.0, "speed": 80.0, "lat": 22.5841, "lon": 88.3410, "bearing": 310.0},
         11033: {"name": "DARBHANGA EXP", "station": "ANG", "next": "BAP", "delay": 25.0, "speed": 65.0, "lat": 19.0755, "lon": 74.7219, "bearing": 45.0},
+        12919: {
+            "name": "Malwa SF Express",
+            "station": "UJN",
+            "next": "MKSM",
+            "delay": 12.0,
+            "speed": 65.5,
+            "lat": 23.1827,
+            "lon": 75.7682,
+            "bearing": 180.0,
+            "segment_progress": 0.45,
+            "raw_data": {
+                "trainNumber": "12919",
+                "trainName": "Malwa SF Express",
+                "status": "Running",
+                "delayMinutes": 12.0,
+                "lastUpdatedAt": datetime.now().strftime("%Y-%m-%dT07:14:00+05:30"),
+                "isLive": True,
+                "currentLocation": {
+                    "stationCode": "UJN",
+                    "stationName": "Ujjain Junction",
+                    "status": "Departed",
+                    "isActualPosition": True,
+                    "speedKmh": 65.5,
+                    "segmentProgress": 0.45,
+                    "bearingDegrees": 180.0,
+                    "coordinates": {"lat": 23.1827, "lng": 75.7682}
+                },
+                "train": {
+                    "number": "12919",
+                    "name": "Malwa SF Express",
+                    "type": "Superfast Express",
+                    "source": {"code": "INDB", "name": "Indore Junction"},
+                    "destination": {"code": "SVDK", "name": "Shri Mata Vaishno Devi Katra"},
+                    "distance": 1640.0,
+                    "totalHalts": 45,
+                    "avgSpeed": 57.2,
+                    "maxSpeed": 110.0
+                },
+                "previousHalt": {
+                    "stationCode": "INDB",
+                    "stationName": "Indore Junction",
+                    "status": "Departed",
+                    "delay": 12
+                },
+                "nextHalt": {
+                    "stationCode": "MKSM",
+                    "stationName": "Maksi",
+                    "scheduledArrival": "02:10:00",
+                    "status": "Upcoming"
+                },
+                "exceptions": [
+                    {
+                        "type": "DIVERTED",
+                        "title": "Route Diversion Detected",
+                        "description": "Train is diverted between UJN → MKSM",
+                        "from": "UJN",
+                        "to": "MKSM",
+                        "fromStationName": "Ujjain Junction",
+                        "toStationName": "Maksi",
+                        "affectedStations": ["UJN", "MKSM"],
+                        "skippedStations": ["Maksi"],
+                        "diversionDistanceKm": 41.2,
+                        "reason": "Track maintenance and chord bypass"
+                    }
+                ]
+            }
+        },
     }
 
     async def get_live_train_status(self, train_no: int) -> LiveTrainStatus:
@@ -404,7 +653,11 @@ class MockLiveProvider(LiveTrainProvider):
             "lat": 28.6143,
             "lon": 77.2187,
             "bearing": 90.0,
+            "segment_progress": 0.45,
         })
+
+        raw = profile.get("raw_data")
+        exceptions = raw.get("exceptions") if isinstance(raw, dict) else None
 
         return LiveTrainStatus(
             success=True,
@@ -414,7 +667,7 @@ class MockLiveProvider(LiveTrainProvider):
             current_station=profile["station"],
             next_station=profile["next"],
             delay_minutes=float(profile["delay"]),
-            segment_progress=0.45,
+            segment_progress=float(profile.get("segment_progress", 0.45)),
             speed_kmh=float(profile["speed"]),
             bearing_degrees=profile.get("bearing"),
             latitude=profile["lat"],
@@ -422,8 +675,48 @@ class MockLiveProvider(LiveTrainProvider):
             last_updated=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             is_live=True,
             is_stale=False,
-            error=None
+            error=None,
+            exceptions=exceptions,
+            raw_data=raw
         )
+
+    async def get_train_route(self, train_no: int, stops: bool = True, force_refresh: bool = False) -> Dict[str, Any]:
+        """Mock RailRadar Route API returning track coordinates and stops."""
+        profile = self.MOCK_TRAIN_PROFILES.get(train_no, {
+            "name": f"EXP TRAIN {train_no}",
+            "station": "NDLS",
+            "next": "GZB",
+            "lat": 28.6143,
+            "lon": 77.2187,
+        })
+        lat = profile["lat"]
+        lon = profile["lon"]
+        return {
+            "success": True,
+            "data": {
+                "trainNumber": str(train_no),
+                "format": "geojson",
+                "geojson": {
+                    "type": "Feature",
+                    "properties": {"trainNumber": str(train_no)},
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [
+                            [lon, lat],
+                            [80.3537, 26.4539],
+                            [81.8340, 25.4358],
+                            [83.1189, 25.2818]
+                        ]
+                    }
+                },
+                "stops": [
+                    {"sequence": 1, "code": profile.get("station", "NDLS"), "name": profile.get("station", "NDLS"), "lat": lat, "lng": lon},
+                    {"sequence": 2, "code": "CNB", "name": "Kanpur Central", "lat": 26.4539, "lng": 80.3537},
+                    {"sequence": 3, "code": "PRYJ", "name": "Prayagraj Junction", "lat": 25.4358, "lng": 81.8340},
+                    {"sequence": 4, "code": "DDU", "name": "Pt. Deen Dayal Upadhyaya", "lat": 25.2818, "lng": 83.1189}
+                ]
+            }
+        }
 
 
 def get_live_provider(provider_type: Optional[str] = None) -> LiveTrainProvider:

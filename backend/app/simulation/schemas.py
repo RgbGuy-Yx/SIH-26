@@ -42,6 +42,7 @@ class TrainSimulationState(BaseModel):
     latitude: float = Field(..., description="Current interpolated geographic latitude")
     longitude: float = Field(..., description="Current interpolated geographic longitude")
     upcoming_stops: List[Dict[str, Any]] = Field(default_factory=list, description="Next upcoming stations with ETAs")
+    all_stops: List[Dict[str, Any]] = Field(default_factory=list, description="Complete sequence of stations along route with timetable schedule and predicted ETA")
     
     # Timetable & Schedule Timings (ISO-8601 strings or formatted time strings)
     scheduled_arrival: Optional[str] = Field(None, description="Timetable scheduled arrival time at target stop")

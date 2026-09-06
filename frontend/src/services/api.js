@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8080';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -39,6 +39,11 @@ export const api = {
 
   getTrainLiveStatus: async (trainNo) => {
     const res = await client.get(`/api/trains/${trainNo}/live-status`);
+    return res.data;
+  },
+
+  getTrainRoute: async (trainNo) => {
+    const res = await client.get(`/api/trains/${trainNo}/route`);
     return res.data;
   },
 

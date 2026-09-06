@@ -1,24 +1,62 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useSimulation } from '../context/SimulationContext';
 import { MapLibreRailwayMap } from '../components/MapLibreRailwayMap';
+import {
+  MapControlsToolbar,
+  StationTimelineSidebar,
+  TrainOverviewCard,
+} from '../components/live-map';
+import { api } from '../services/api';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
+/**
+ * LiveMapPage - Orchestrator for Real-Time Railway Map and Telemetry
+ * Decomposed into modular components:
+ * - MapLibreRailwayMap (WebGL Map Canvas & GPU Layers)
+ * - MapControlsToolbar (Top-Right Layer Toggles)
+ * - StationTimelineSidebar (Left Collapsible Stops Timeline)
+ * - TrainOverviewCard (Right Sidebar with Live Telemetry vs Simulation tabs)
+ */
 export function LiveMapPage() {
   const {
     topology,
-    isLoadingTopology,
     trains,
-    activeConflicts,
     selectedTrainNo,
     selectedTrain,
+    selectedTrainDetails,
     setSelectedTrainNo,
     simulationTime,
     wsConnected,
+    activeConflicts,
   } = useSimulation();
 
-  const [selectedStation, setSelectedStation] = useState('Kanpur Central (CNB)');
-  const [showFloatingInspector, setShowFloatingInspector] = useState(true);
+  const [selectedStation, setSelectedStation] = useState(null);
+  const [activeStationCode, setActiveStationCode] = useState(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [showOverviewCard, setShowOverviewCard] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showLiveFeed, setShowLiveFeed] = useState(true);
+  const [showVirtualSim, setShowVirtualSim] = useState(true);
+  const [overviewTab, setOverviewTab] = useState('live'); // 'live' | 'simulation'
 
-  // Build station code -> full name dictionary from topology
+  // Dynamic selected train attributes
+  const currentTrain = selectedTrain || selectedTrainDetails || (trains.length > 0 ? trains[0] : null);
+  const trainNo = currentTrain?.train_no || selectedTrainNo || 12003;
+  const trainName = currentTrain?.train_name || (trainNo ? `Train #${trainNo}` : 'Select a Train');
+  const priorityTier = currentTrain?.priority_tier != null ? currentTrain.priority_tier : 3;
+
+  // External live provider status state
+  const [liveStatusLoading, setLiveStatusLoading] = useState(false);
+  const [liveStatusData, setLiveStatusData] = useState(null);
+  const [liveStatusError, setLiveStatusError] = useState(null);
+  const [customTrainInput, setCustomTrainInput] = useState(String(trainNo || '12919'));
+
+  // Sync custom train input when active train changes
+  useEffect(() => {
+    if (trainNo) setCustomTrainInput(String(trainNo));
+  }, [trainNo]);
+
+  // Station code -> full name dictionary
   const stationNameMap = useMemo(() => {
     const map = {};
     if (topology?.stations) {
@@ -37,6 +75,17 @@ export function LiveMapPage() {
 
   const formatHumanTime = (timeStr) => {
     if (!timeStr) return '—';
+    if (typeof timeStr !== 'string') {
+      try {
+        const d = new Date(timeStr);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+      } catch {
+        return '—';
+      }
+      return String(timeStr);
+    }
     try {
       if (timeStr.includes('T') || timeStr.includes(' ')) {
         const parts = timeStr.replace('T', ' ').split(' ');
@@ -57,127 +106,411 @@ export function LiveMapPage() {
       }
       return timeStr;
     } catch {
-      return timeStr;
+      return typeof timeStr === 'string' ? timeStr : '—';
     }
   };
 
-  // Selected train dynamic attributes
-  const trainNo = selectedTrain?.train_no || (trains.length > 0 ? trains[0].train_no : 12003);
-  const trainName = selectedTrain?.train_name || 'Swarna Shatabdi Express';
-  const priorityTier = selectedTrain?.priority_tier || 1;
-  const currentStn = selectedTrain?.current_station || 'NDLS';
-  const nextStn = selectedTrain?.next_station || 'CNB';
-  const originStn = selectedTrain?.origin_station;
-  const destStn = selectedTrain?.destination_station;
-  const status = selectedTrain?.train_status || 'RUNNING';
+  const formatIsoOrTime = (str) => {
+    if (!str) return '—';
+    try {
+      if (str.includes('T') || str.includes(' ')) {
+        const d = new Date(str);
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+      }
+      return formatHumanTime(str);
+    } catch {
+      return str;
+    }
+  };
 
-  // Decoupled delay terms
-  const accumulatedDelay = Math.round(selectedTrain?.current_accumulated_delay || 0);
-  const mlDelay = Math.round(selectedTrain?.ml_predicted_delay || selectedTrain?.ml_delay_prediction || 0);
-  const conflictDelay = Math.round(selectedTrain?.conflict_delay || 0);
-  const finalDelay = Math.round(selectedTrain?.final_predicted_delay || (accumulatedDelay + mlDelay + conflictDelay));
+  const getRelativeTime = (timestampStr) => {
+    if (!timestampStr) return null;
+    try {
+      const ts = new Date(timestampStr).getTime();
+      if (isNaN(ts)) return null;
+      const diffSec = Math.floor((Date.now() - ts) / 1000);
+      if (diffSec < 0 || diffSec < 60) return 'Just now';
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin} min ago`;
+      const diffHr = Math.floor(diffMin / 60);
+      if (diffHr < 24) return `${diffHr}h ${diffMin % 60}m ago`;
+      return `${Math.floor(diffHr / 24)}d ago`;
+    } catch {
+      return null;
+    }
+  };
 
-  // Upcoming 2-3 stops
-  const upcomingStops = selectedTrain?.upcoming_stops || [];
+  const handleFetchLiveStatus = async (overrideTrainNo = null) => {
+    const targetNo = overrideTrainNo || Number(customTrainInput) || trainNo;
+    if (!targetNo) return;
+    setLiveStatusLoading(true);
+    setLiveStatusError(null);
+    try {
+      const res = await api.getTrainLiveStatus(targetNo);
+      if (res?.live_status && res.live_status.success === false) {
+        setLiveStatusError(res.live_status.error || `Provider unable to verify live status for train #${targetNo}`);
+      } else if (res?.live_status) {
+        setLiveStatusData(res);
+        setOverviewTab('live');
+        setShowLiveFeed(true);
+      } else {
+        setLiveStatusError(`No telemetry response from live provider for train #${targetNo}`);
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.detail || err.message || 'Failed to fetch live train provider status';
+      setLiveStatusError(errMsg);
+    } finally {
+      setLiveStatusLoading(false);
+    }
+  };
 
-  // Timetable Scheduled ETA vs AI Dynamic Predicted ETA
-  const rawSchedEta = selectedTrain?.scheduled_arrival || selectedTrain?.scheduled_arrival_next || (upcomingStops.length > 0 ? upcomingStops[0].scheduled_arrival : null);
-  const rawPredEta = selectedTrain?.predicted_eta || selectedTrain?.simulated_arrival || rawSchedEta;
-  const formattedSchedEta = formatHumanTime(rawSchedEta);
-  const formattedPredEta = formatHumanTime(rawPredEta);
+  // Station and Train movement state
+  const currentStn = currentTrain?.current_station || '';
+  const nextStn = currentTrain?.next_station || '';
+  const originStn = currentTrain?.origin_station || '';
+  const destStn = currentTrain?.destination_station || '';
+  const status = currentTrain?.train_status || 'RUNNING';
 
-  // Status & Journey Completion
-  const isCompleted = status === 'COMPLETED' || status === 'ARRIVED';
-  const progressPercent = isCompleted ? 100 : Math.min(100, Math.max(0, Math.round((selectedTrain?.route_progress || 0) * 100)));
+  const accumulatedDelay = Math.round(currentTrain?.current_accumulated_delay || 0);
+  const mlDelay = Math.round(currentTrain?.ml_predicted_delay || currentTrain?.ml_delay_prediction || 0);
+  const conflictDelay = Math.round(currentTrain?.conflict_delay || 0);
+  const finalDelay = Math.round(currentTrain?.final_predicted_delay || (accumulatedDelay + mlDelay + conflictDelay));
 
-  // NetworkX Conflict Detection
   const hasActiveConflict = Boolean(
-    selectedTrain?.has_active_conflict ||
+    currentTrain?.has_active_conflict ||
     conflictDelay > 0 ||
     status === 'HOLDING' ||
     (activeConflicts && activeConflicts.some((c) => c.train_no === trainNo))
   );
 
-  // Operational speed from dynamic WebSocket stream or priority tier
-  const speedKmh = selectedTrain?.speed_kmh !== undefined && selectedTrain?.speed_kmh !== null
-    ? Math.round(selectedTrain.speed_kmh)
-    : isCompleted || status === 'AT_STATION' || status === 'NOT_STARTED' || status === 'HOLDING'
-    ? 0
-    : priorityTier === 1
-    ? 130
-    : priorityTier === 2
-    ? 110
-    : priorityTier === 3
-    ? 80
-    : 65;
+  const isCompleted = status === 'ARRIVED' || (currentStn && currentStn === destStn);
+  const speedKmh = Math.round(currentTrain?.speed || (currentTrain?.telemetry && currentTrain.telemetry.speed) || (isCompleted ? 0 : 75));
 
-  // Live Sync Indicator with simulation clock time
-  const lastSyncTime = formatHumanTime(simulationTime);
+  const progressPercent = useMemo(() => {
+    if (isCompleted) return 100;
+    if (!currentTrain?.route_stations || currentTrain.route_stations.length === 0) return 35;
+    const total = currentTrain.route_stations.length;
+    const curIdx = currentTrain.route_stations.indexOf(currentStn);
+    if (curIdx === -1) return 20;
+    return Math.min(95, Math.max(5, Math.round(((curIdx + 1) / total) * 100)));
+  }, [currentTrain, currentStn, isCompleted]);
 
-  // Dynamic AI Operational Reasoning directly from backend WebSocket or contextual fallback
-  const plainReason = selectedTrain?.ai_reasoning || (
-    isCompleted
-      ? `Train has reached its final scheduled destination station. Platform clearance and turnaround in progress.`
-      : hasActiveConflict || status === 'HOLDING'
-      ? `NetworkX conflict engine detected section contention. Train yielded precedence and is held on loop line (+${conflictDelay}m hold).`
-      : status === 'AT_STATION'
-      ? `Scheduled operational platform halt at ${getStationLabel(currentStn)}. Passenger boarding and scheduled departure on block clearance.`
-      : finalDelay > 15
-      ? `Carrying ${accumulatedDelay}m accumulated delay plus ${mlDelay}m ML predicted buffer. Dynamic pacing adjustments active.`
-      : finalDelay > 0
-      ? `Minor pacing variance (+${finalDelay}m). AI models project time recovery before reaching ${getStationLabel(nextStn)}.`
-      : `Operating on schedule with clear line signals and nominal cruise velocity (${speedKmh} km/h).`
+  const scheduledEtaFormatted = formatHumanTime(
+    currentTrain?.scheduled_destination_eta || currentTrain?.scheduled_departure_time
   );
 
-  // Context-aware status banner
-  let statusBanner = {
-    title: 'Cruising on Track',
-    subtitle: `Signals clear • Nominal velocity ${speedKmh} km/h`,
-    badgeClass: 'bg-emerald-950/70 border-emerald-500/40 text-emerald-300',
-    icon: 'check_circle',
-  };
+  const predictedEtaFormatted = useMemo(() => {
+    if (currentTrain?.predicted_destination_eta) {
+      return formatHumanTime(currentTrain.predicted_destination_eta);
+    }
+    const baseTime = currentTrain?.scheduled_destination_eta;
+    if (!baseTime) return scheduledEtaFormatted;
+    try {
+      const d = new Date(baseTime);
+      if (!isNaN(d.getTime())) {
+        d.setMinutes(d.getMinutes() + finalDelay);
+        return formatHumanTime(d.toISOString());
+      }
+      return scheduledEtaFormatted;
+    } catch {
+      return scheduledEtaFormatted;
+    }
+  }, [currentTrain, finalDelay, scheduledEtaFormatted]);
 
-  if (isCompleted) {
-    statusBanner = {
-      title: 'Journey Completed',
-      subtitle: `Arrived at destination ${getStationLabel(destStn || currentStn)}`,
-      badgeClass: 'bg-slate-900/90 border-slate-700 text-slate-300',
-      icon: 'task_alt',
-    };
-  } else if (hasActiveConflict || status === 'HOLDING') {
-    statusBanner = {
-      title: 'Holding on Loop Line (Conflict)',
-      subtitle: `Waiting at ${getStationLabel(currentStn)} for higher-priority overtake`,
-      badgeClass: 'bg-amber-950/70 border-amber-500/40 text-amber-300',
-      icon: 'pause_circle',
-    };
-  } else if (status === 'AT_STATION') {
-    statusBanner = {
-      title: `Station Dwell: ${getStationLabel(currentStn)}`,
-      subtitle: 'Passenger boarding & platform stop',
-      badgeClass: 'bg-blue-950/70 border-blue-500/40 text-blue-300',
-      icon: 'storefront',
-    };
-  } else if (finalDelay > 15) {
-    statusBanner = {
-      title: `Delayed (+${finalDelay} mins)`,
-      subtitle: `Section congestion / speed buffer active`,
-      badgeClass: 'bg-red-950/70 border-red-500/40 text-red-300',
-      icon: 'warning',
-    };
-  } else if (finalDelay > 0) {
-    statusBanner = {
-      title: `Minor Delay (+${finalDelay} mins)`,
-      subtitle: 'Expected to recover time on open line',
-      badgeClass: 'bg-amber-950/70 border-amber-500/40 text-amber-300',
-      icon: 'info',
-    };
+  const lastSyncTime = useMemo(() => {
+    return formatHumanTime(simulationTime || new Date().toISOString());
+  }, [simulationTime]);
+
+  // Telemetry attributes from Live Provider
+  const live = liveStatusData?.live_status;
+  const raw = live?.raw_data || {};
+  const currLoc = raw.currentLocation || {};
+  const currStnObj = currLoc.currentStation || {};
+  const nextStnObj = currLoc.nextStation || {};
+  const prevStnObj = currLoc.previousStation || {};
+  const trainInfo = raw.train || {};
+
+  const liveTrainNo = live?.train_no || customTrainInput || trainNo;
+  const liveTrainName = live?.train_name || trainName;
+  const liveOverallStatus = live?.status || 'RUNNING';
+  const liveDelay = Number(live?.current_delay_minutes || 0);
+  const liveRelativeTime = getRelativeTime(live?.last_updated);
+  const liveSpeed = currLoc.speedKmh || live?.speed_kmh || speedKmh;
+  const liveBearing = currLoc.bearingDegrees || 0;
+  const liveIsActualPos = currLoc.isActualPosition ?? true;
+
+  const currStationCode = currLoc.stationCode || currStnObj.code || live?.current_station || currentStn || '';
+  const currStationName = currLoc.stationName || currStnObj.name || getStationLabel(currStationCode);
+  const nextStationCode = raw.nextHalt?.stationCode || nextStnObj.code || live?.next_station || nextStn || '';
+  const nextStationName = raw.nextHalt?.stationName || nextStnObj.name || getStationLabel(nextStationCode);
+
+  let prevStationCode = prevStnObj.code || '';
+  let prevStationName = prevStnObj.name || '';
+  if (!prevStationCode && Array.isArray(raw.route)) {
+    const curIdx = raw.route.findIndex((s) => s.stationCode === currStationCode);
+    if (curIdx > 0) {
+      prevStationCode = raw.route[curIdx - 1].stationCode || '';
+      prevStationName = raw.route[curIdx - 1].stationName || '';
+    }
   }
 
+  const isDiverted = Boolean(raw.diverted);
+  const divertedRoutes = Array.isArray(raw.divertedRoutes) ? raw.divertedRoutes : [];
+
+  const originCode = trainInfo.source?.code || trainInfo.origin?.code || originStn || '';
+  const originName = trainInfo.source?.name || trainInfo.origin?.name || getStationLabel(originCode);
+  const destCode = trainInfo.destination?.code || destStn || '';
+  const destName = trainInfo.destination?.name || getStationLabel(destCode);
+
+  const liveLat = currLoc.coordinates?.lat != null ? currLoc.coordinates.lat : (currLoc.lat != null ? currLoc.lat : live?.latitude);
+  const liveLng = currLoc.coordinates?.lng != null ? currLoc.coordinates.lng : (currLoc.lng != null ? currLoc.lng : live?.longitude);
+  const liveLastUpdated = live?.last_updated || new Date().toISOString();
+
+  const updatedTotalDelay = Math.round(liveDelay + mlDelay + conflictDelay);
+
+  const scheduledDestinationEta = useMemo(() => {
+    return (
+      raw.destinationETA ||
+      (Array.isArray(raw.route) && raw.route.length > 0 ? raw.route[raw.route.length - 1].scheduledArrival : null) ||
+      live?.expected_arrival_time ||
+      currentTrain?.scheduled_destination_eta ||
+      null
+    );
+  }, [raw, live, currentTrain]);
+
+  const updatedEta = useMemo(() => {
+    const base = scheduledDestinationEta;
+    if (!base) return 'Schedule Synchronized';
+    try {
+      const d = new Date(base);
+      if (!isNaN(d.getTime())) {
+        d.setMinutes(d.getMinutes() + updatedTotalDelay);
+        return formatHumanTime(d.toISOString());
+      }
+      return formatHumanTime(base);
+    } catch {
+      return 'Schedule Synchronized';
+    }
+  }, [scheduledDestinationEta, updatedTotalDelay]);
+
+  // AI Operational Reasoning Narrative
+  const operationalReasoning = useMemo(() => {
+    if (!selectedTrain && !trainNo) return 'Awaiting dispatch telemetry...';
+    if (isCompleted) {
+      return `Journey Terminated: #{trainNo} arrived at ${getStationLabel(destStn)}. All track block reservations cleared.`;
+    }
+    if (hasActiveConflict) {
+      return `Precedence Conflict Hold: Train #${trainNo} held on loop line at ${getStationLabel(currentStn)} for higher priority movement (+${conflictDelay || 8}m headway buffer).`;
+    }
+    if (status === 'HOLDING') {
+      return `Signal Stop: Automated signal interlock hold active outside ${getStationLabel(currentStn)}. Awaiting block section clearance.`;
+    }
+    if (finalDelay > 15) {
+      return `Schedule Congestion (+${finalDelay}m): Corridor speed reduced between ${getStationLabel(currentStn)} and ${getStationLabel(nextStn)} due to dynamic block spacing.`;
+    }
+    if (finalDelay > 0) {
+      return `Minor Variance (+${finalDelay}m): Interlocking switch transit pacing. Projected recovery before ${getStationLabel(nextStn)}.`;
+    }
+    return `Nominal Cruise: Operating strictly on timetable at nominal line velocity (${speedKmh} km/h). All automated block signals clear.`;
+  }, [selectedTrain, trainNo, destStn, isCompleted, hasActiveConflict, status, currentStn, conflictDelay, finalDelay, nextStn, speedKmh]);
+
+  // Live Train Map Object for MapLibre Map (Satellite GPS Real-time Telemetry)
+  const liveTrainMapData = useMemo(() => {
+    if (!liveStatusData || !live) return null;
+    if (liveLat == null || liveLng == null || isNaN(Number(liveLat)) || isNaN(Number(liveLng))) return null;
+
+    let routeCoords = [];
+    if (raw.route_geojson?.geometry?.coordinates && Array.isArray(raw.route_geojson.geometry.coordinates)) {
+      routeCoords = raw.route_geojson.geometry.coordinates;
+    } else if (Array.isArray(raw.route) && raw.route.length > 0) {
+      routeCoords = raw.route
+        .filter((r) => r.coordinates && r.coordinates.lng != null && r.coordinates.lat != null)
+        .map((r) => [Number(r.coordinates.lng), Number(r.coordinates.lat)]);
+    } else if (Array.isArray(raw.route_stops) && raw.route_stops.length > 0) {
+      routeCoords = raw.route_stops
+        .filter((r) => r.lng != null && r.lat != null)
+        .map((r) => [Number(r.lng), Number(r.lat)]);
+    }
+
+    return {
+      trainNo: liveTrainNo,
+      trainName: liveTrainName,
+      lat: Number(liveLat),
+      lng: Number(liveLng),
+      speedKmh: Number(liveSpeed) || 0,
+      bearing: Number(liveBearing) || 0,
+      delayMinutes: Number(liveDelay) || 0,
+      status: liveOverallStatus,
+      stationName: currStationName,
+      isActualPosition: liveIsActualPos,
+      routeCoords,
+      routeGeoJSON: raw.route_geojson || null,
+      routeStops: raw.route_stops || [],
+      lastUpdated: liveLastUpdated,
+    };
+  }, [liveStatusData, live, raw, liveLat, liveLng, liveTrainNo, liveTrainName, liveSpeed, liveBearing, liveDelay, liveOverallStatus, currStationName, liveIsActualPos, liveLastUpdated]);
+
+  // Station Timetable Sequence (Dynamic 4-tier fallback)
+  const stationTimetable = useMemo(() => {
+    const liveRoute = liveStatusData?.live_status?.raw_data?.route;
+    const liveRouteStops = liveStatusData?.live_status?.raw_data?.route_stops;
+
+    if (Array.isArray(liveRoute) && liveRoute.length > 0) {
+      return liveRoute.map((stop, idx) => {
+        const rawStatus = (stop.status || '').toUpperCase();
+        const stopStatus =
+          rawStatus === 'DEPARTED' ? 'DEPARTED' :
+          rawStatus === 'ARRIVED' || rawStatus === 'AT_STATION' ? 'AT_STATION' :
+          rawStatus === 'UPCOMING' ? 'UPCOMING' :
+          idx === 0 ? 'DEPARTED' : 'UPCOMING';
+        return {
+          stop_no: stop.sequence || idx + 1,
+          station_code: stop.stationCode,
+          station_name: stop.stationName || stationNameMap[stop.stationCode] || stop.stationCode,
+          scheduled_arrival: stop.scheduledArrival,
+          scheduled_departure: stop.scheduledDeparture,
+          predicted_eta: stop.actualArrival || stop.scheduledArrival,
+          distance_km: stop.distance,
+          platform: stop.platform ? `PF ${stop.platform}` : null,
+          status: stopStatus,
+          delay_minutes: stop.delayArrival || stop.delayDeparture || 0,
+        };
+      });
+    }
+
+    if (Array.isArray(liveRouteStops) && liveRouteStops.length > 0) {
+      return liveRouteStops.map((stop, idx) => ({
+        stop_no: stop.sequence || idx + 1,
+        station_code: stop.code,
+        station_name: stop.name || stationNameMap[stop.code] || stop.code,
+        scheduled_arrival: null,
+        scheduled_departure: null,
+        predicted_eta: null,
+        distance_km: null,
+        platform: 'PF 1',
+        status: idx === 0 ? 'DEPARTED' : 'UPCOMING',
+        delay_minutes: 0,
+      }));
+    }
+
+    if (selectedTrain?.all_stops && selectedTrain.all_stops.length > 0) {
+      return selectedTrain.all_stops;
+    }
+
+    if (selectedTrainDetails?.all_stops && selectedTrainDetails.all_stops.length > 0) {
+      return selectedTrainDetails.all_stops;
+    }
+
+    if (currentTrain?.route_stations && currentTrain.route_stations.length > 0) {
+      const curIdx = currentTrain.route_stations.indexOf(currentStn);
+      return currentTrain.route_stations.map((stnCode, idx) => {
+        let stopStatus = 'UPCOMING';
+        if (curIdx !== -1) {
+          if (idx < curIdx) stopStatus = 'DEPARTED';
+          else if (idx === curIdx) stopStatus = status === 'AT_STATION' ? 'AT_STATION' : 'DEPARTED';
+          else if (idx === curIdx + 1) stopStatus = 'NEXT_STOP';
+        }
+        return {
+          stop_no: idx + 1,
+          station_code: stnCode,
+          station_name: stationNameMap[stnCode] || stnCode,
+          scheduled_arrival: null,
+          scheduled_departure: null,
+          predicted_eta: null,
+          distance_km: null,
+          platform: null,
+          status: stopStatus,
+          delay_minutes: 0,
+        };
+      });
+    }
+
+    return [];
+  }, [liveStatusData, selectedTrain, selectedTrainDetails, currentTrain, currentStn, status, stationNameMap]);
+
+  const nextUpcomingStations = useMemo(() => {
+    if (selectedTrain?.upcoming_stops && selectedTrain.upcoming_stops.length > 0) {
+      return selectedTrain.upcoming_stops.slice(0, 3);
+    }
+    const futureStops = stationTimetable.filter(
+      (s) => s.status === 'NEXT_STOP' || s.status === 'UPCOMING'
+    );
+    return futureStops.slice(0, 3);
+  }, [selectedTrain, stationTimetable]);
+
+  const filteredStations = useMemo(() => {
+    if (!searchQuery.trim()) return stationTimetable;
+    const q = searchQuery.toLowerCase();
+    return stationTimetable.filter(
+      (s) =>
+        s.station_code.toLowerCase().includes(q) ||
+        (s.station_name && s.station_name.toLowerCase().includes(q))
+    );
+  }, [stationTimetable, searchQuery]);
+
+  const handleSelectStationOnMap = (stnCode) => {
+    setActiveStationCode(stnCode);
+    const label = getStationLabel(stnCode);
+    setSelectedStation(label);
+  };
+
+  // Structured props for child views
+  const liveTelemetryProps = {
+    liveTrainNo,
+    liveTrainName,
+    liveOverallStatus,
+    liveDelay,
+    liveRelativeTime,
+    liveSpeed,
+    liveBearing,
+    liveIsActualPos,
+    currStationCode,
+    currStationName,
+    nextStationCode,
+    nextStationName,
+    prevStationCode,
+    prevStationName,
+    isDiverted,
+    divertedRoutes,
+    originCode,
+    originName,
+    destCode,
+    destName,
+    totalDistanceKm: trainInfo.distance,
+    totalHalts: trainInfo.totalHalts,
+    avgSpeedKmh: trainInfo.avgSpeed || trainInfo.averageSpeed,
+    maxSpeedKmh: trainInfo.maxSpeed || trainInfo.maximumSpeed,
+    trainType: trainInfo.type || trainInfo.trainType || 'Express',
+    updatedTotalDelay,
+    updatedEta,
+    scheduledEta: formatHumanTime(scheduledDestinationEta),
+    operationalAnalysis: liveStatusData?.operational_analysis,
+    formatHumanTime,
+  };
+
+  const virtualSimulationProps = {
+    hasActiveConflict,
+    conflictDelay,
+    currentStn,
+    getStationLabel,
+    accumulatedDelay,
+    finalDelay,
+    scheduledEtaFormatted,
+    predictedEtaFormatted,
+    originStn,
+    destStn,
+    progressPercent,
+    nextUpcomingStations,
+    formatIsoOrTime,
+    operationalReasoning,
+  };
+
   return (
-    <div className="flex flex-col w-full p-3 sm:p-5">
-      {/* Full View Tactical Railway Viewport Container */}
-      <div className="w-full h-[calc(100vh-130px)] min-h-[720px] bg-surface-container-lowest rounded-xl relative overflow-hidden shadow-2xl flex flex-col justify-between border border-slate-800/80">
+    <div className="relative w-full h-full flex-1 overflow-hidden bg-[#F4F5F7] select-none">
+      {/* 1. Full-Bleed Map Canvas (Spans 100% of the viewport width and height) */}
+      <div className="absolute inset-0 w-full h-full">
         <MapLibreRailwayMap
           topology={topology}
           trains={trains}
@@ -185,256 +518,81 @@ export function LiveMapPage() {
           onSelectTrain={setSelectedTrainNo}
           selectedStation={selectedStation}
           onSelectStation={setSelectedStation}
+          liveTrainData={liveTrainMapData}
+          showLiveFeed={showLiveFeed}
+          showVirtualSim={showVirtualSim}
+          onToggleHideLiveFeed={() => setShowLiveFeed((prev) => !prev)}
         />
-
-        {/* Floating Telemetry Inspector HUD Overlay (Clean, Structured, & Minimal) */}
-        {!showFloatingInspector ? (
-          <button
-            type="button"
-            onClick={() => setShowFloatingInspector(true)}
-            className="absolute top-16 right-4 z-20 px-3.5 py-2 rounded-lg bg-slate-950/90 hover:bg-slate-900 border border-cyan-500/50 text-cyan-300 text-xs font-semibold shadow-[0_0_20px_rgba(0,0,0,0.8)] backdrop-blur-md flex items-center gap-2 transition-all hover:scale-105"
-            title="Open Telemetry Inspector Panel"
-          >
-            <span className="material-symbols-outlined text-[18px] text-cyan-400">train</span>
-            <span>Show Train Inspector</span>
-          </button>
-        ) : (
-          <div className="absolute top-16 right-4 z-20 w-88 sm:w-[410px] max-h-[calc(100%-5rem)] overflow-y-auto bg-slate-950/95 backdrop-blur-xl border border-slate-800/90 rounded-2xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.85)] space-y-3.5 text-xs transition-all">
-            {/* 1. Header: Train No, Priority Tier, Live Feed Status */}
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded bg-blue-600 font-mono text-[11px] font-bold text-white shadow-sm">
-                  {trainNo}
-                </span>
-                <span
-                  className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                    priorityTier === 1
-                      ? 'bg-blue-950 border border-blue-600 text-blue-200'
-                      : priorityTier === 2
-                      ? 'bg-purple-950 border border-purple-600 text-purple-200'
-                      : priorityTier === 3
-                      ? 'bg-slate-900 border border-slate-700 text-slate-300'
-                      : 'bg-amber-950 border border-amber-600 text-amber-200'
-                  }`}
-                >
-                  {priorityTier === 1
-                    ? 'Priority Tier 1 (High)'
-                    : priorityTier === 2
-                    ? 'Priority Tier 2 (Express)'
-                    : priorityTier === 3
-                    ? 'Priority Tier 3 (Standard)'
-                    : 'Priority Tier 4 (Freight)'}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-900/90 border border-slate-800">
-                  <span
-                    className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}
-                  ></span>
-                  <span className="text-[10px] font-medium text-slate-300">
-                    {wsConnected ? `Live • ${lastSyncTime}` : 'Syncing'}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setShowFloatingInspector(false)}
-                  className="p-1 rounded-md hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                  title="Minimize Inspector Panel"
-                >
-                  <span className="material-symbols-outlined text-[16px]">close</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 2. Train Name + Origin ➔ Destination */}
-            <div>
-              <h2 className="text-base font-bold text-white tracking-tight leading-snug">{trainName}</h2>
-              {(originStn || destStn) && (
-                <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
-                  <span className="truncate max-w-[150px]">{getStationLabel(originStn)}</span>
-                  <span className="text-cyan-400 font-bold">➔</span>
-                  <span className="truncate max-w-[150px]">{getStationLabel(destStn)}</span>
-                </p>
-              )}
-            </div>
-
-            {/* 3. Operational Conflict Alert (if NetworkX conflict detected) */}
-            {hasActiveConflict && (
-              <div className="p-2.5 rounded-lg bg-red-950/40 border border-red-500/50 flex items-start gap-2 text-red-200">
-                <span className="material-symbols-outlined text-[18px] text-red-400 shrink-0 mt-0.5">
-                  warning
-                </span>
-                <div className="space-y-0.5 flex-1">
-                  <div className="font-bold text-[11px] flex items-center justify-between">
-                    <span>NetworkX Conflict: Precedence Hold</span>
-                    {conflictDelay > 0 && (
-                      <span className="px-1.5 py-0.2 rounded bg-red-900/80 text-red-200 text-[9px] font-mono">
-                        +{conflictDelay}m hold
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-red-300/90 leading-tight">
-                    Yielding mainline track clearance on loop line for higher-priority service overtake.
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 4. Status Banner */}
-            <div className={`p-2.5 rounded-lg border flex items-start gap-2.5 ${statusBanner.badgeClass}`}>
-              <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">{statusBanner.icon}</span>
-              <div className="space-y-0.5">
-                <div className="font-bold text-xs">{statusBanner.title}</div>
-                <div className="text-[11px] opacity-90">{statusBanner.subtitle}</div>
-              </div>
-            </div>
-
-            {/* 5. Journey Section Progress Bar */}
-            <div className="p-3 rounded-lg bg-surface-container-lowest border border-slate-800/80 space-y-2">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-400 font-medium">Journey Progress:</span>
-                <span className="font-mono text-cyan-400 font-bold">{progressPercent}% Traveled</span>
-              </div>
-
-              <div className="flex items-center justify-between text-xs font-semibold text-white">
-                <span className="truncate max-w-[140px]">{getStationLabel(currentStn)}</span>
-                <span className="text-slate-500 font-bold px-1">➔</span>
-                <span className="truncate max-w-[140px] text-cyan-300 text-right">
-                  {isCompleted ? 'Terminus Reached' : getStationLabel(nextStn)}
-                </span>
-              </div>
-
-              <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden border border-slate-800">
-                <div
-                  className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-700 shadow-[0_0_8px_rgba(6,182,212,0.6)]"
-                  style={{ width: `${progressPercent}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* 6. Key Metrics Grid: Scheduled vs Predicted ETA, Current vs Final Delay, Speed */}
-            <div className="grid grid-cols-3 gap-2 text-center">
-              {/* Scheduled ETA */}
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
-                <span className="text-[9px] text-slate-400 uppercase font-semibold">Scheduled ETA</span>
-                <div className="text-sm font-extrabold text-slate-200 font-mono my-0.5">{formattedSchedEta}</div>
-                <div className="text-[9px] text-slate-400">Timetable Baseline</div>
-              </div>
-
-              {/* Predicted ETA */}
-              <div
-                className={`p-2 rounded-lg border flex flex-col justify-between ${
-                  finalDelay > 15
-                    ? 'bg-red-950/30 border-red-500/40'
-                    : finalDelay > 0
-                    ? 'bg-amber-950/30 border-amber-500/40'
-                    : 'bg-emerald-950/30 border-emerald-500/40'
-                }`}
-              >
-                <span
-                  className={`text-[9px] uppercase font-semibold ${
-                    finalDelay > 15 ? 'text-red-300' : finalDelay > 0 ? 'text-amber-300' : 'text-emerald-300'
-                  }`}
-                >
-                  Predicted ETA
-                </span>
-                <div
-                  className={`text-sm font-extrabold font-mono my-0.5 ${
-                    finalDelay > 15 ? 'text-red-300' : finalDelay > 0 ? 'text-amber-300' : 'text-emerald-300'
-                  }`}
-                >
-                  {formattedPredEta}
-                </div>
-                <div
-                  className={`text-[9px] font-semibold truncate ${
-                    finalDelay > 15 ? 'text-red-400' : finalDelay > 0 ? 'text-amber-400' : 'text-emerald-400'
-                  }`}
-                >
-                  {finalDelay > 0 ? `+${finalDelay}m Delay` : 'On Time (0m)'}
-                </div>
-              </div>
-
-              {/* Speed & Carried Delay */}
-              <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800 flex flex-col justify-between">
-                <span className="text-[9px] text-slate-400 uppercase font-semibold">Speed & Lag</span>
-                <div className="flex items-baseline justify-center gap-1 my-0.5">
-                  <span className="text-sm font-extrabold text-white font-mono">{speedKmh}</span>
-                  <span className="text-[9px] text-slate-400">km/h</span>
-                </div>
-                <div className="text-[9px] text-slate-300 font-mono">
-                  Lag: <span className={accumulatedDelay > 0 ? 'text-amber-400' : 'text-slate-300'}>+{accumulatedDelay}m</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 7. Next 2-3 Upcoming Stations with Predicted ETAs */}
-            <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80 space-y-1.5">
-              <div className="flex items-center justify-between text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
-                <span className="flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[13px] text-blue-400">pin_drop</span>
-                  Upcoming Stations
-                </span>
-                <span>{isCompleted ? 'Finished' : `${upcomingStops.length} stops ahead`}</span>
-              </div>
-
-              {isCompleted ? (
-                <div className="p-2 rounded bg-slate-950/70 border border-slate-800 text-center text-slate-400 text-[11px]">
-                  All scheduled route stations traversed.
-                </div>
-              ) : upcomingStops.length > 0 ? (
-                <div className="space-y-1 pt-0.5">
-                  {upcomingStops.slice(0, 3).map((stop, i) => (
-                    <div
-                      key={stop.station_code || i}
-                      className="flex items-center justify-between p-1.5 rounded bg-slate-950/80 border border-slate-800/60 text-[11px]"
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <span className="w-4 h-4 rounded-full bg-blue-950 border border-blue-600 text-blue-300 text-[9px] flex items-center justify-center font-bold">
-                          {i + 1}
-                        </span>
-                        <span className="font-medium text-white truncate max-w-[140px]">
-                          {getStationLabel(stop.station_code)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-right text-[10px]">
-                        {stop.scheduled_arrival && (
-                          <span className="text-slate-400 font-mono">
-                            Sched: {formatHumanTime(stop.scheduled_arrival)}
-                          </span>
-                        )}
-                        <span className="font-mono font-bold text-cyan-300">
-                          ETA: {formatHumanTime(stop.predicted_eta || stop.scheduled_arrival)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex items-center justify-between p-1.5 rounded bg-slate-950/80 border border-slate-800/60 text-[11px]">
-                  <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 rounded-full bg-blue-950 border border-blue-600 text-blue-300 text-[9px] flex items-center justify-center font-bold">
-                      1
-                    </span>
-                    <span className="font-medium text-white">{getStationLabel(nextStn)}</span>
-                  </div>
-                  <div className="text-right font-mono font-bold text-cyan-300 text-[10px]">
-                    ETA: {formattedPredEta}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 8. AI Operational Reasoning */}
-            <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1">
-              <div className="flex items-center gap-1.5 text-slate-200 font-semibold text-[11px]">
-                <span className="material-symbols-outlined text-blue-400 text-[15px]">auto_awesome</span>
-                <span>AI Operational Reasoning</span>
-              </div>
-              <p className="text-slate-300 text-[11px] leading-relaxed pl-1">{plainReason}</p>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* 2. Top Controls Bar: Layer Toggles for Live Feed, Virtual Sim, and Overview */}
+      <MapControlsToolbar
+        showLiveFeed={showLiveFeed}
+        onToggleLiveFeed={() => setShowLiveFeed((prev) => !prev)}
+        showVirtualSim={showVirtualSim}
+        onToggleVirtualSim={() => setShowVirtualSim((prev) => !prev)}
+        showOverviewCard={showOverviewCard}
+        onToggleOverviewCard={() => setShowOverviewCard((prev) => !prev)}
+        hasLiveData={Boolean(liveStatusData)}
+      />
+
+      {/* 3. Left Side: Floating Station Timetable Inspector */}
+      <ErrorBoundary title="Route Stations Inspector">
+        <StationTimelineSidebar
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+          trainNo={trainNo}
+          trainName={trainName}
+          trains={trains}
+          onSelectTrain={(val) => {
+            setSelectedTrainNo(val);
+            setCustomTrainInput(String(val));
+          }}
+          setCustomTrainInput={setCustomTrainInput}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          filteredStations={filteredStations}
+          totalStops={stationTimetable.length}
+          currentStn={currentStn}
+          activeStationCode={activeStationCode}
+          onSelectStation={handleSelectStationOnMap}
+          wsConnected={wsConnected}
+          formatHumanTime={formatHumanTime}
+        />
+      </ErrorBoundary>
+
+      {/* 4. Right Side: Floating Train Overview Card */}
+      {showOverviewCard && (
+        <ErrorBoundary title="Train Overview Telemetry">
+          <TrainOverviewCard
+            trainNo={trainNo}
+            trainName={trainName}
+            priorityTier={priorityTier}
+            speedKmh={speedKmh}
+            wsConnected={wsConnected}
+            lastSyncTime={lastSyncTime}
+            customTrainInput={customTrainInput}
+            setCustomTrainInput={setCustomTrainInput}
+            handleFetchLiveStatus={handleFetchLiveStatus}
+            liveStatusLoading={liveStatusLoading}
+            liveStatusData={liveStatusData}
+            liveStatusError={liveStatusError}
+            onDismissError={() => setLiveStatusError(null)}
+            onClearLiveData={() => {
+              setLiveStatusData(null);
+              setLiveStatusError(null);
+            }}
+            overviewTab={overviewTab}
+            setOverviewTab={setOverviewTab}
+            showLiveFeed={showLiveFeed}
+            onToggleHideLiveFeed={() => setShowLiveFeed((prev) => !prev)}
+            showVirtualSim={showVirtualSim}
+            onToggleVirtualSim={() => setShowVirtualSim((prev) => !prev)}
+            liveTelemetryProps={liveTelemetryProps}
+            virtualSimulationProps={virtualSimulationProps}
+          />
+        </ErrorBoundary>
+      )}
     </div>
   );
 }
