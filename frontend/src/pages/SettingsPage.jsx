@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import StitchMcpStatus from '../components/StitchMcpStatus';
 
 export function SettingsPage() {
   const [simulationSpeed, setSimulationSpeed] = useState('4x');
@@ -38,11 +37,6 @@ export function SettingsPage() {
             Save Configuration
           </button>
         </div>
-      </div>
-
-      {/* Embedded Stitch MCP Client Section */}
-      <div className="w-full">
-        <StitchMcpStatus />
       </div>
 
       {/* Grid: System Controls & Parameters */}
