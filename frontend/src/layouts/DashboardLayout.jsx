@@ -19,8 +19,8 @@ export function DashboardLayout() {
     wsConnected,
   } = useSimulation();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login', { replace: true });
   };
 
@@ -182,11 +182,19 @@ export function DashboardLayout() {
 
           {/* User Profile Avatar & Logout */}
           <div className="flex items-center gap-2 pl-1">
+            <div className="hidden sm:flex flex-col text-right">
+              <span className="text-[11px] font-bold text-slate-900 leading-tight">
+                {currentUser?.officerId || 'RO-AG-1024'}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">
+                {currentUser?.roleLabel || 'Control Officer'}
+              </span>
+            </div>
             <div
-              className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs border border-slate-300 select-none"
-              title={currentUser?.name || 'Controller'}
+              className="w-7 h-7 rounded-full bg-[#0284C7]/10 text-[#0284C7] flex items-center justify-center font-bold text-xs border border-[#0284C7]/20 select-none"
+              title={currentUser?.officerId || 'Officer'}
             >
-              {currentUser?.avatar || 'CTL'}
+              {currentUser?.avatar || 'CO'}
             </div>
             <button
               type="button"

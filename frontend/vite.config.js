@@ -9,6 +9,9 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       exclude: ['maplibre-gl']
     },
+    build: {
+      chunkSizeWarningLimit: 2000
+    },
     server: {
       port: 5173,
       host: true,
