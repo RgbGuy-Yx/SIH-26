@@ -12,125 +12,122 @@ export function UserLayout() {
     navigate('/login', { replace: true });
   };
 
-  return (
-    <div className="bg-[#f9f9ff] text-[#111c2d] font-sans antialiased min-h-screen flex flex-col">
-      {/* Stitch Passenger View Fixed Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-200/80 shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
-        <div className="h-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
-          {/* Brand Logo & Name */}
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#d8e2ff] border border-blue-200 flex items-center justify-center text-[#00397f] shadow-sm">
-                <span className="material-symbols-outlined text-[24px]">train</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="font-bold text-base text-[#00397f] leading-tight tracking-tight uppercase">
-                  Indian Railways
-                </span>
-                <span className="text-[11px] text-[#424752] leading-tight">
-                  Safe Journeys. A Connected India.
-                </span>
-              </div>
-            </div>
+  const isLiveStatusActive = location.search.includes('tab=live-status');
+  const isAboutActive = location.search.includes('tab=about');
+  const isFindTrainsActive = !isLiveStatusActive && !isAboutActive;
 
-            {/* Navigation Tabs */}
-            <nav className="hidden md:flex items-center gap-1 ml-4">
+  return (
+    <div className="bg-[#F4F6F8] text-slate-800 font-sans antialiased min-h-screen flex flex-col selection:bg-[#0284C7] selection:text-white">
+      {/* 1. Clean Top Navigation Header (Full-width edge-to-edge) */}
+      <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-xs px-4 sm:px-6 lg:px-8 flex items-center justify-between">
+        <div className="w-full flex items-center justify-between gap-4">
+          {/* Brand Logo & Name */}
+          <div className="flex items-center gap-6 lg:gap-8">
+            <NavLink to="/user-dashboard" className="flex items-center gap-2.5 group">
+              <div className="w-8 h-8 rounded-lg bg-[#0284C7] flex items-center justify-center text-white shadow-xs group-hover:scale-105 transition-transform">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-sm text-slate-900 tracking-wider uppercase font-sans">
+                  RailRadar
+                </span>
+                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-cyan-50 border border-cyan-200 text-[#00A3C4] rounded">
+                  PASSENGER
+                </span>
+              </div>
+            </NavLink>
+
+            {/* Navigation Tabs (Find Trains, Live Status, About) */}
+            <nav className="hidden md:flex items-center gap-1">
               <NavLink
                 to="/user-dashboard"
                 end
-                className={({ isActive }) =>
-                  `px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                    isActive
-                      ? 'bg-[#0b4fa8] text-white shadow-sm'
-                      : 'text-[#424752] hover:text-[#111c2d] hover:bg-[#f0f3ff]'
-                  }`
-                }
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  isFindTrainsActive
+                    ? 'bg-[#0284C7] text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
               >
-                Check Train
+                <span className="material-symbols-outlined text-[16px]">swap_calls</span>
+                <span>Find Trains</span>
               </NavLink>
 
               <NavLink
                 to="/user-dashboard?tab=live-status"
-                className={() =>
-                  `px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                    location.search.includes('tab=live-status')
-                      ? 'bg-[#0b4fa8] text-white shadow-sm'
-                      : 'text-[#424752] hover:text-[#111c2d] hover:bg-[#f0f3ff]'
-                  }`
-                }
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  isLiveStatusActive
+                    ? 'bg-[#0284C7] text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
               >
-                Live Status
+                <span className="material-symbols-outlined text-[16px]">sensors</span>
+                <span>Live Status</span>
               </NavLink>
 
               <NavLink
                 to="/user-dashboard?tab=about"
-                className={() =>
-                  `px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                    location.search.includes('tab=about')
-                      ? 'bg-[#0b4fa8] text-white shadow-sm'
-                      : 'text-[#424752] hover:text-[#111c2d] hover:bg-[#f0f3ff]'
-                  }`
-                }
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  isAboutActive
+                    ? 'bg-[#0284C7] text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
               >
-                About
+                <span className="material-symbols-outlined text-[16px]">info</span>
+                <span>About</span>
               </NavLink>
             </nav>
           </div>
 
-          {/* Passenger Badge & User Profile */}
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex flex-col items-end px-3 py-1.5 bg-[#f0f3ff] rounded-xl border border-blue-100/80">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-xs font-bold text-[#00397f]">Passenger View</span>
-              </div>
-              <span className="text-[10px] text-[#424752] font-mono">
-                Real-time information for your journey
+          {/* Right Header Toolbar: Live Telemetry Indicator */}
+          <div className="flex items-center gap-3">
+            {/* Live Telemetry Beacon */}
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[11px] font-mono font-bold text-emerald-800">
+                GPS Feed Synced
               </span>
             </div>
 
-            {currentUser ? (
+            {currentUser && (
               <button
                 type="button"
                 onClick={handleLogout}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 text-[#111c2d] hover:text-rose-700 text-xs font-semibold border border-slate-200 transition-all"
+                className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
                 title="Logout"
               >
-                <span className="material-symbols-outlined text-[16px]">logout</span>
-                <span className="hidden sm:inline">Logout</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => navigate('/login')}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#00397f] hover:bg-[#0b4fa8] text-white text-xs font-semibold transition-all shadow-sm"
-                title="Login"
-              >
-                <span className="material-symbols-outlined text-[16px]">person</span>
-                <span className="hidden sm:inline">Control Room</span>
+                <span className="material-symbols-outlined text-[18px]">logout</span>
               </button>
             )}
           </div>
         </div>
       </header>
 
-      {/* Main Page Content */}
-      <main className="w-full pt-20 flex-1 bg-[#f9f9ff]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Main Page Workspace Content (Full-Bleed Responsive Grid) */}
+      <main className="w-full pt-16 flex-1 bg-[#F4F6F8]">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-5">
           <Outlet />
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200/80 py-6 text-xs text-[#737783]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
+      {/* Clean OCC-Compliant Footer (Full-width) */}
+      <footer className="bg-white border-t border-slate-200 py-4 px-4 sm:px-6 lg:px-8 text-xs text-slate-500 mt-auto">
+        <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[#00397f] text-[18px]">verified</span>
-            <span className="text-[#111c2d] font-medium">Indian Railways • RailRadar Network Intelligence Platform</span>
+            <span className="material-symbols-outlined text-[#0284C7] text-[18px]">verified</span>
+            <span className="text-slate-800 font-semibold">Indian Railways • RailRadar Passenger Portal</span>
+            <span className="text-slate-300">•</span>
+            <span className="text-slate-500 font-mono text-[11px]">SYS-NODE // LIVE</span>
           </div>
-          <span className="font-mono text-[11px] text-[#00452e] font-semibold">
-            Real-time GPS Telemetry & Predictive AI Dispatch Engine
-          </span>
+          <div className="flex items-center gap-3 text-[11px] font-mono text-slate-600">
+            <span className="text-emerald-700 font-semibold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Sub-second GPS Telemetry
+            </span>
+            <span>•</span>
+            <span>XGBoost ML ETA Pipeline</span>
+          </div>
         </div>
       </footer>
     </div>
@@ -138,3 +135,4 @@ export function UserLayout() {
 }
 
 export default UserLayout;
+

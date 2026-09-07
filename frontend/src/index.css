@@ -47,3 +47,29 @@ body {
 .thin-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 116, 139, 0.65);
 }
+
+/* 3. Radar Pulse & Motion Blur Animation Utilities */
+@keyframes radar-sonar-ping {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(2.3);
+    opacity: 0;
+  }
+}
+
+.animate-radar-sonar {
+  animation: radar-sonar-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.track-viewport-gliding {
+  will-change: transform, filter, scroll-position;
+  transform-origin: center center;
+}
+

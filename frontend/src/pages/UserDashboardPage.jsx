@@ -1,607 +1,625 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import api from '../services/api';
+import { LiveTrainStatusSection } from '../components/live-train/LiveTrainStatusSection';
+import { StationAutocompleteInput } from '../components/user-dashboard/StationAutocompleteInput';
+import { TrainCard } from '../components/user-dashboard/TrainCard';
+import { cleanCode } from '../data/indianStations';
+import { formatDateDisplay, formatDuration } from '../utils/dateTimeUtils';
+
+/**
+ * Standard Indian Railways Junctions for quick autocomplete & chips
+ */
+const POPULAR_STATIONS = [
+  { code: 'NDLS', name: 'New Delhi', city: 'Delhi', nearby: ['DLI', 'NZM', 'ANVT', 'DEC'] },
+  { code: 'HWH', name: 'Howrah', city: 'Kolkata', nearby: ['SDAH', 'KOAA', 'SHM', 'SRC'] },
+  { code: 'LJN', name: 'Lucknow Jn', city: 'Lucknow', nearby: ['LKO', 'BNZ', 'ASH'] },
+  { code: 'CNB', name: 'Kanpur Central', city: 'Kanpur', nearby: ['CPA', 'GOY'] },
+  { code: 'INDB', name: 'Indore Jn', city: 'Indore', nearby: ['LMNR', 'DWX'] },
+  { code: 'UJN', name: 'Ujjain Jn', city: 'Ujjain', nearby: ['NAD', 'MKC'] },
+  { code: 'BPL', name: 'Bhopal Jn', city: 'Bhopal', nearby: ['RKMP', 'HBJ', 'SHRN'] },
+  { code: 'PRYJ', name: 'Prayagraj Jn', city: 'Prayagraj', nearby: ['PRG', 'NYN', 'ACOI'] },
+  { code: 'DDU', name: 'Pt. Deen Dayal Upadhyaya', city: 'Mughalsarai', nearby: ['BSB', 'BSBS'] },
+  { code: 'CSMT', name: 'Mumbai CSMT', city: 'Mumbai', nearby: ['DR', 'LTT', 'TNA', 'BVI'] },
+  { code: 'MMCT', name: 'Mumbai Central', city: 'Mumbai', nearby: ['BDTS', 'BVI', 'DR'] },
+  { code: 'MAS', name: 'Chennai Central', city: 'Chennai', nearby: ['MS', 'TBM', 'PER'] },
+  { code: 'SBC', name: 'KSR Bengaluru', city: 'Bengaluru', nearby: ['YPR', 'SMVB', 'BNC'] },
+  { code: 'ADI', name: 'Ahmedabad Jn', city: 'Ahmedabad', nearby: ['SBT', 'MAN'] },
+  { code: 'SVDK', name: 'Shri Mata Vaishno Devi Katra', city: 'Katra', nearby: ['UHP', 'JAT'] },
+  { code: 'JYG', name: 'Jaynagar', city: 'Jaynagar', nearby: ['MBI', 'DBG'] },
+  { code: 'PUNE', name: 'Pune Jn', city: 'Pune', nearby: ['SVJR', 'KK'] },
+  { code: 'HYB', name: 'Hyderabad Deccan', city: 'Hyderabad', nearby: ['SC', 'KCG'] },
+];
+
+const STANDARD_TRAIN_TYPES = [
+  { id: 'ALL', label: 'All' },
+  { id: 'Rajdhani', label: 'Rajdhani' },
+  { id: 'Shatabdi', label: 'Shatabdi' },
+  { id: 'Duronto', label: 'Duronto' },
+  { id: 'Superfast', label: 'Superfast' },
+  { id: 'Express', label: 'Express' },
+  { id: 'Passenger', label: 'Passenger' },
+  { id: 'Special', label: 'Special' },
+];
+
+const DAYS_OF_WEEK = [
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+  { key: 'sun', label: 'Sun' },
+];
+
+function cleanStationCode(str) {
+  return cleanCode(str);
+}
 
 export function UserDashboardPage() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Determine active tab from URL query params or state
+  // Search parameters
   const searchParams = new URLSearchParams(location.search);
   const tabParam = searchParams.get('tab');
+  const urlFrom = searchParams.get('from');
+  const urlTo = searchParams.get('to');
+  const urlDate = searchParams.get('date');
+  const urlTrain = searchParams.get('train');
 
-  const [activeTab, setActiveTab] = useState('check-train');
-  const [trainQuery, setTrainQuery] = useState('12003');
-  const [selectedTrain, setSelectedTrain] = useState({
-    no: '12003',
-    name: 'Swarna Shatabdi Express',
-    origin: 'New Delhi (NDLS)',
-    destination: 'Lucknow Charbagh (LJN)',
-    status: 'In Transit',
-    currentDelay: '+8 min',
-    predictedDelay: '+18 min',
-    expectedArrival: '16:38',
-    scheduledArrival: '16:20',
-    currentLocation: 'Etawah Jn (ETW)',
-    speed: '98 km/h • Line clear',
-    railway: 'Northern Railway',
-    lastRefreshed: 'Just Now',
-    aiExplanation:
-      'Section pacing bottleneck at Tundla Junction due to preceding freight movement. AI model predicts recovery of 4 mins on the high-speed Kanpur-Lucknow corridor.'
-  });
+  const todayIso = useMemo(() => new Date().toISOString().split('T')[0], []);
 
-  useEffect(() => {
-    if (tabParam === 'live-status') {
-      setActiveTab('live-status');
-    } else if (tabParam === 'about') {
-      setActiveTab('about');
-    } else {
-      setActiveTab('check-train');
-    }
+  // Search Form State
+  const [fromStation, setFromStation] = useState(urlFrom || 'NDLS');
+  const [toStation, setToStation] = useState(urlTo || 'HWH');
+  const [journeyDate, setJourneyDate] = useState(urlDate || todayIso);
+  const [showOnlySelectedDate, setShowOnlySelectedDate] = useState(false);
+  const [selectedType, setSelectedType] = useState('ALL');
+  const [sortBy, setSortBy] = useState('departure_asc');
+
+  // Find Trains API State
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [betweenData, setBetweenData] = useState(null);
+
+  // Live Train Section State
+  const [selectedTrainNo, setSelectedTrainNo] = useState(urlTrain || '12274');
+  const [trainSchedule, setTrainSchedule] = useState(null);
+  const [trainLive, setTrainLive] = useState(null);
+  const [trainLoading, setTrainLoading] = useState(false);
+  const [trainError, setTrainError] = useState(null);
+  const [lastRefreshedTime, setLastRefreshedTime] = useState('Just Now');
+
+  // Active Tab
+  const activeTab = useMemo(() => {
+    if (tabParam === 'live-status') return 'live-status';
+    if (tabParam === 'about') return 'about';
+    return 'find-trains';
   }, [tabParam]);
 
-  const handleTabChange = (tabName) => {
-    setActiveTab(tabName);
-    if (tabName === 'check-train') {
-      navigate('/user-dashboard');
-    } else {
-      navigate(`/user-dashboard?tab=${tabName}`);
+  // Sync selected train from URL
+  useEffect(() => {
+    if (urlTrain) {
+      setSelectedTrainNo(urlTrain);
     }
+  }, [urlTrain]);
+
+
+  const getStationDisplayName = (code) => {
+    if (!code) return '';
+    const found = POPULAR_STATIONS.find(
+      (s) => s.code.toUpperCase() === code.toUpperCase()
+    );
+    return found ? found.name : code;
   };
 
+  /**
+   * Search Trains Between Stations (Corridor)
+   */
+  const searchTrainsBetween = useCallback(async (fromInput, toInput, dateIso = null) => {
+    const cleanFrom = cleanStationCode(fromInput);
+    const cleanTo = cleanStationCode(toInput);
+
+    if (!cleanFrom || !cleanTo) {
+      setError('Please specify both Origin (From) and Destination (To) stations.');
+      return;
+    }
+
+    if (cleanFrom === cleanTo) {
+      setError('Source and Destination stations cannot be identical.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await api.getTrainsBetween(cleanFrom, cleanTo, dateIso);
+      if (response && response.success) {
+        setBetweenData(response.data);
+      } else {
+        setError(response?.error || `No train data found between ${cleanFrom} and ${cleanTo}.`);
+      }
+    } catch (err) {
+      console.error('Error searching trains:', err);
+      const detail =
+        err.response?.data?.detail ||
+        (err.response?.status === 404
+          ? `No direct trains operating between ${cleanFrom} and ${cleanTo}.`
+          : 'Unable to communicate with the RailRadar corridor service.');
+      setError(detail);
+      setBetweenData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /**
+   * Load Live Status and Static Schedule for Selected Train
+   * Static Schedule is cached with a 1-hour in-memory TTL in api.getTrainSchedule and only live telemetry is refreshed.
+   */
+  const loadSingleTrainLive = useCallback(async (trainNo, dateIso, isRefresh = false) => {
+    if (!trainNo) return;
+    setTrainLoading(true);
+    setTrainError(null);
+
+    try {
+      // If doing a live refresh and schedule already exists, only request fresh live telemetry
+      const shouldFetchSchedule = !isRefresh || !trainSchedule;
+
+      const promises = [
+        api.getTrainLive(trainNo, dateIso),
+      ];
+      if (shouldFetchSchedule) {
+        promises.push(api.getTrainSchedule(trainNo));
+      }
+
+      const results = await Promise.allSettled(promises);
+      const liveRes = results[0];
+      const schedRes = shouldFetchSchedule ? results[1] : null;
+
+      let sched = null;
+      let live = null;
+
+      if (liveRes.status === 'fulfilled' && liveRes.value) {
+        live = liveRes.value.data || liveRes.value;
+      }
+      if (schedRes && schedRes.status === 'fulfilled' && schedRes.value) {
+        sched = schedRes.value.data || schedRes.value;
+      }
+
+      if (!sched && !live && !trainSchedule) {
+        setTrainError(`Telemetry for train #${trainNo} is currently unavailable.`);
+      } else {
+        if (sched) setTrainSchedule(sched);
+        if (live) setTrainLive(live);
+        setLastRefreshedTime(
+          new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        );
+      }
+    } catch (err) {
+      console.error('Error loading single train live:', err);
+      setTrainError('Failed to retrieve live train telemetry.');
+    } finally {
+      setTrainLoading(false);
+    }
+  }, [trainSchedule]);
+
+  // Fetch corridor trains on mount if on find-trains tab
+  useEffect(() => {
+    if (activeTab === 'find-trains') {
+      searchTrainsBetween(fromStation, toStation, journeyDate);
+    }
+  }, [activeTab, searchTrainsBetween]);
+
+  // Fetch live train data whenever live-status tab is active or selected train changes
+  useEffect(() => {
+    if (activeTab === 'live-status') {
+      loadSingleTrainLive(selectedTrainNo, journeyDate);
+    }
+  }, [activeTab, selectedTrainNo, journeyDate, loadSingleTrainLive]);
+
+  // Handle Find Trains form submit
   const handleSearchSubmit = (e) => {
-    e.preventDefault();
-    if (trainQuery.includes('12301') || trainQuery.toLowerCase().includes('rajdhani')) {
-      setSelectedTrain({
-        no: '12301',
-        name: 'Howrah Rajdhani Express',
-        origin: 'Howrah Jn (HWH)',
-        destination: 'New Delhi (NDLS)',
-        status: 'In Transit',
-        currentDelay: '+4 min',
-        predictedDelay: '+10 min',
-        expectedArrival: '10:05',
-        scheduledArrival: '09:55',
-        currentLocation: 'Kanpur Central (CNB)',
-        speed: '125 km/h • Track Green',
-        railway: 'Eastern Railway',
-        lastRefreshed: 'Just Now',
-        aiExplanation:
-          'High priority clearance granted on Grand Chord line. Minimal variance detected at Kanpur interlock.'
-      });
-    } else if (trainQuery.includes('12561') || trainQuery.toLowerCase().includes('swatantrata')) {
-      setSelectedTrain({
-        no: '12561',
-        name: 'Swatantrata Senani Express',
-        origin: 'Jaynagar (JYG)',
-        destination: 'New Delhi (NDLS)',
-        status: 'In Transit',
-        currentDelay: '+24 min',
-        predictedDelay: '+35 min',
-        expectedArrival: '13:15',
-        scheduledArrival: '12:40',
-        currentLocation: 'Aligarh Jn (ALJN)',
-        speed: '72 km/h • Caution Order',
-        railway: 'East Central Railway',
-        lastRefreshed: 'Just Now',
-        aiExplanation:
-          'Fog speed restriction of 75 km/h active between Tundla and Aligarh. Section control regulating headway.'
-      });
-    } else {
-      setSelectedTrain({
-        no: '12003',
-        name: 'Swarna Shatabdi Express',
-        origin: 'New Delhi (NDLS)',
-        destination: 'Lucknow Charbagh (LJN)',
-        status: 'In Transit',
-        currentDelay: '+8 min',
-        predictedDelay: '+18 min',
-        expectedArrival: '16:38',
-        scheduledArrival: '16:20',
-        currentLocation: 'Etawah Jn (ETW)',
-        speed: '98 km/h • Line clear',
-        railway: 'Northern Railway',
-        lastRefreshed: 'Just Now',
-        aiExplanation:
-          'Section pacing bottleneck at Tundla Junction due to preceding freight movement. AI model predicts recovery of 4 mins on the high-speed Kanpur-Lucknow corridor.'
+    if (e && e.preventDefault) e.preventDefault();
+    searchTrainsBetween(fromStation, toStation, journeyDate);
+    navigate(
+      `/user-dashboard?from=${encodeURIComponent(cleanStationCode(fromStation))}&to=${encodeURIComponent(
+        cleanStationCode(toStation)
+      )}&date=${journeyDate}`
+    );
+  };
+
+  // Swap Stations
+  const handleSwapStations = () => {
+    const prevFrom = fromStation;
+    const prevTo = toStation;
+    setFromStation(prevTo);
+    setToStation(prevFrom);
+    searchTrainsBetween(prevTo, prevFrom, journeyDate);
+    navigate(
+      `/user-dashboard?from=${encodeURIComponent(cleanStationCode(prevTo))}&to=${encodeURIComponent(
+        cleanStationCode(prevFrom)
+      )}&date=${journeyDate}`
+    );
+  };
+
+  /**
+   * Navigate to Live Status Section when a Train Card is Clicked
+   */
+  const handleSelectTrainCard = useCallback((trainNo) => {
+    setSelectedTrainNo(trainNo);
+    navigate(
+      `/user-dashboard?tab=live-status&train=${encodeURIComponent(trainNo)}&date=${journeyDate}&from=${encodeURIComponent(
+        cleanStationCode(fromStation)
+      )}&to=${encodeURIComponent(cleanStationCode(toStation))}`
+    );
+  }, [journeyDate, fromStation, toStation, navigate]);
+
+  // Return to Search
+  const handleBackToSearch = () => {
+    navigate(
+      `/user-dashboard?tab=find-trains&from=${encodeURIComponent(
+        cleanStationCode(fromStation)
+      )}&to=${encodeURIComponent(cleanStationCode(toStation))}&date=${journeyDate}`
+    );
+  };
+
+  // Share handler
+  const handleShare = () => {
+    const url = window.location.href;
+    navigator.clipboard?.writeText(url);
+    setCopiedShare(true);
+    setTimeout(() => setCopiedShare(false), 2000);
+  };
+
+  const selectedDayOfWeek = useMemo(() => {
+    if (!journeyDate) return null;
+    try {
+      const d = new Date(journeyDate + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { weekday: 'short' }).toLowerCase().substring(0, 3);
+    } catch {
+      return null;
+    }
+  }, [journeyDate]);
+
+  // Filtered & Sorted Find Trains List
+  const processedTrains = useMemo(() => {
+    let list = betweenData?.trains || [];
+
+    if (selectedType !== 'ALL') {
+      list = list.filter((t) => {
+        const typeStr = (t.train?.type || '').toLowerCase();
+        return typeStr.includes(selectedType.toLowerCase());
       });
     }
-  };
+
+    if (showOnlySelectedDate && selectedDayOfWeek) {
+      list = list.filter((t) => {
+        const runDays = Array.isArray(t.train?.runDays)
+          ? t.train.runDays.map((d) => d.toLowerCase())
+          : [];
+        return runDays.includes(selectedDayOfWeek);
+      });
+    }
+
+    return [...list].sort((a, b) => {
+      if (sortBy === 'departure_asc') {
+        const depA = a.from?.departure || '99:99';
+        const depB = b.from?.departure || '99:99';
+        return depA.localeCompare(depB);
+      }
+      if (sortBy === 'departure_desc') {
+        const depA = a.from?.departure || '00:00';
+        const depB = b.from?.departure || '00:00';
+        return depB.localeCompare(depA);
+      }
+      if (sortBy === 'arrival_asc') {
+        const arrA = a.to?.arrival || '99:99';
+        const arrB = b.to?.arrival || '99:99';
+        return arrA.localeCompare(arrB);
+      }
+      if (sortBy === 'duration_asc') {
+        return (Number(a.duration) || 0) - (Number(b.duration) || 0);
+      }
+      return 0;
+    });
+  }, [betweenData, selectedType, showOnlySelectedDate, selectedDayOfWeek, sortBy]);
+
+  const originName = betweenData?.from?.name || getStationDisplayName(fromStation) || fromStation;
+  const destName = betweenData?.to?.name || getStationDisplayName(toStation) || toStation;
+  const originCode = betweenData?.from?.code || cleanStationCode(fromStation) || 'NDLS';
+  const destCode = betweenData?.to?.code || cleanStationCode(toStation) || 'HWH';
 
   return (
-    <div className="space-y-6 text-[#111c2d]">
-      {/* Stitch Secondary Top Nav Pill Bar */}
-      <div className="flex items-center gap-2 border-b border-blue-100 pb-3">
-        <button
-          type="button"
-          onClick={() => handleTabChange('check-train')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'check-train'
-              ? 'bg-[#00397f] text-white shadow-md'
-              : 'text-[#424752] hover:bg-[#f0f3ff] hover:text-[#111c2d]'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">search</span>
-          <span>Check Your Train</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleTabChange('live-status')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'live-status'
-              ? 'bg-[#00397f] text-white shadow-md'
-              : 'text-[#424752] hover:bg-[#f0f3ff] hover:text-[#111c2d]'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">directions_railway</span>
-          <span>Live Train Status (12003)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleTabChange('about')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-            activeTab === 'about'
-              ? 'bg-[#00397f] text-white shadow-md'
-              : 'text-[#424752] hover:bg-[#f0f3ff] hover:text-[#111c2d]'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">info</span>
-          <span>About RailRadar</span>
-        </button>
-      </div>
-
-      {/* ========================================================== */}
-      {/* SCREEN 1: CHECK YOUR TRAIN (PASSENGER VIEW) */}
-      {/* ========================================================== */}
-      {activeTab === 'check-train' && (
+    <div className="space-y-6 text-slate-800">
+      {/* ========================================================================= */}
+      {/* SECTION 1: FIND TRAINS CORRIDOR SEARCH (Default View)                     */}
+      {/* ========================================================================= */}
+      {activeTab === 'find-trains' && (
         <div className="space-y-6">
-          {/* Hero Banner */}
-          <section className="relative overflow-hidden bg-[#f0f3ff] border border-blue-100 rounded-2xl p-6 sm:p-8 shadow-sm">
-            <div className="absolute -right-12 -top-12 w-96 h-96 bg-[#d8e2ff]/50 rounded-full blur-3xl pointer-events-none"></div>
-            <div className="absolute right-1/4 -bottom-16 w-64 h-64 bg-[#85f8c4]/30 rounded-full blur-2xl pointer-events-none"></div>
-
-            <div className="relative z-10 max-w-3xl space-y-4">
-              <div className="inline-flex items-center gap-2 bg-white border border-blue-100/80 px-3 py-1 rounded-full shadow-sm">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
-                </span>
-                <span className="text-[11px] font-mono font-bold text-[#424752] uppercase tracking-wider">
-                  Live Passenger Telemetry & AI ETA
-                </span>
+          {/* Handcrafted Search Console */}
+          <section className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-6 sm:p-7 space-y-6">
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 text-[#0284C7] flex items-center justify-center shrink-0 border border-slate-200/60">
+                <span className="material-symbols-outlined text-[20px]">search</span>
               </div>
+              <div>
+                <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
+                  Find Trains
+                </h1>
+                <p className="text-xs text-slate-500 font-sans mt-0.5">
+                  Search trains between two stations
+                </p>
+              </div>
+            </div>
 
-              <h1 className="text-3xl font-bold text-[#111c2d] tracking-tight">Check Your Train</h1>
-              <p className="text-xs sm:text-sm text-[#424752] max-w-xl">
-                Get verified GPS status, network-predicted arrival times, platform guides, and straightforward delay context.
-              </p>
+            {/* Horizontal Input Bar */}
+            <form onSubmit={handleSearchSubmit} className="space-y-5">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+                {/* 1. From Station Box */}
+                <div className="lg:col-span-4">
+                  <StationAutocompleteInput
+                    label="From Station"
+                    value={fromStation}
+                    onChange={setFromStation}
+                    placeholder="New Delhi"
+                    badgeColor="blue"
+                    defaultCode="NDLS"
+                  />
+                </div>
 
-              {/* Search Form */}
-              <form onSubmit={handleSearchSubmit} className="pt-2 flex flex-col gap-3">
-                <div className="flex flex-col sm:flex-row items-stretch gap-2 bg-white border border-slate-200 p-2 rounded-xl shadow-md">
-                  <div className="flex items-center gap-3 px-3 py-1 flex-1">
-                    <span className="material-symbols-outlined text-[#00397f] text-[24px]">train</span>
-                    <input
-                      type="text"
-                      value={trainQuery}
-                      onChange={(e) => setTrainQuery(e.target.value)}
-                      placeholder="Enter Train Number (e.g. 12003, 12301) or Name..."
-                      className="w-full bg-transparent text-xs sm:text-sm font-mono text-[#111c2d] placeholder:text-[#737783] focus:outline-none"
-                    />
-                  </div>
+                {/* Swap Button */}
+                <div className="lg:col-span-1 flex items-center justify-center">
                   <button
-                    type="submit"
-                    className="px-6 py-2.5 bg-[#00397f] hover:bg-[#0b4fa8] text-white font-semibold text-xs rounded-lg transition-all shadow-sm flex items-center justify-center gap-2"
+                    type="button"
+                    onClick={handleSwapStations}
+                    className="w-9 h-9 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-[#0284C7] shadow-2xs flex items-center justify-center transition-transform active:rotate-180 cursor-pointer"
+                    title="Swap Origin and Destination"
                   >
-                    <span className="material-symbols-outlined text-[18px]">near_me</span>
-                    <span>Track Train</span>
+                    <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
                   </button>
                 </div>
 
-                {/* Quick Chips */}
-                <div className="flex flex-wrap items-center gap-2 text-xs text-[#424752] pt-1">
-                  <span className="font-mono text-[11px] text-[#737783]">Quick search:</span>
-                  {[
-                    { no: '12003', label: '12003 Swarna Shatabdi' },
-                    { no: '12301', label: '12301 Howrah Rajdhani' },
-                    { no: '12561', label: '12561 Swatantrata S. Exp' }
-                  ].map((chip) => (
-                    <button
-                      key={chip.no}
-                      type="button"
-                      onClick={() => {
-                        setTrainQuery(chip.no);
-                        handleSearchSubmit({ preventDefault: () => { } });
-                      }}
-                      className="px-3 py-1 rounded-full bg-white border border-slate-200 text-[#111c2d] text-xs font-mono hover:bg-[#d8e2ff] hover:border-[#00397f]/40 transition-colors shadow-sm"
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
+                {/* 2. To Station Box */}
+                <div className="lg:col-span-4">
+                  <StationAutocompleteInput
+                    label="To Station"
+                    value={toStation}
+                    onChange={setToStation}
+                    placeholder="Howrah"
+                    badgeColor="cyan"
+                    defaultCode="HWH"
+                  />
                 </div>
-              </form>
-            </div>
-          </section>
 
-          {/* Active Train Status Card */}
-          <section className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-sm space-y-6">
-            {/* Header Row */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-200/80">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-[#d8e2ff] border border-blue-200 text-[#00397f] flex items-center justify-center shrink-0 shadow-sm">
-                  <span className="material-symbols-outlined text-[28px]">directions_railway</span>
-                </div>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono font-bold text-lg text-[#111c2d]">#{selectedTrain.no}</span>
-                    <h2 className="text-base font-bold text-[#00397f]">{selectedTrain.name}</h2>
-                    <span className="px-2.5 py-0.5 rounded-full bg-[#85f8c4]/40 border border-emerald-300 text-[#005137] text-xs font-semibold flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                      {selectedTrain.status}
+
+                {/* 3. Journey Date Box */}
+                <div className="lg:col-span-3">
+                  <div className="bg-slate-50/80 hover:bg-slate-50 focus-within:bg-white border border-slate-200 focus-within:border-[#0284C7] rounded-xl px-3.5 py-2.5 transition-all shadow-2xs">
+                    <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Journey Date
                     </span>
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px] text-slate-500 shrink-0">
+                        calendar_today
+                      </span>
+                      <input
+                        type="date"
+                        value={journeyDate}
+                        onChange={(e) => setJourneyDate(e.target.value)}
+                        className="w-full bg-transparent text-xs sm:text-sm font-mono font-bold text-slate-800 focus:outline-none cursor-pointer"
+                      />
+                    </div>
                   </div>
-                  <p className="text-xs text-[#424752] mt-1 flex items-center gap-1.5">
-                    <span className="font-semibold text-[#111c2d]">{selectedTrain.origin}</span>
-                    <span className="material-symbols-outlined text-[14px] text-[#737783]">arrow_forward</span>
-                    <span className="font-semibold text-[#111c2d]">{selectedTrain.destination}</span>
-                    <span className="text-slate-300">•</span>
-                    <span>{selectedTrain.railway}</span>
-                  </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Filters & Action Row */}
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pt-2 border-t border-slate-100">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-medium text-slate-500 mr-1.5 font-sans">
+                    Train Type:
+                  </span>
+                  {STANDARD_TRAIN_TYPES.map((type) => {
+                    const isSelected = selectedType === type.id;
+                    return (
+                      <button
+                        key={type.id}
+                        type="button"
+                        onClick={() => setSelectedType(type.id)}
+                        className={`px-3 py-1 rounded-full text-xs transition-all font-medium ${
+                          isSelected
+                            ? 'bg-[#0284C7] text-white font-bold shadow-2xs'
+                            : 'bg-slate-100/80 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {type.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-4 w-full lg:w-auto justify-between lg:justify-end">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600 font-medium select-none">
+                    <input
+                      type="checkbox"
+                      checked={showOnlySelectedDate}
+                      onChange={(e) => setShowOnlySelectedDate(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#0284C7] focus:ring-[#0284C7] border-slate-300 accent-[#0284C7] cursor-pointer"
+                    />
+                    <span>Show only trains running on selected date</span>
+                  </label>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-6 py-2.5 rounded-xl bg-[#0284C7] hover:bg-[#0369a1] active:scale-[0.98] text-white text-xs sm:text-sm font-bold transition-all shadow-xs flex items-center gap-2 disabled:opacity-60 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      {loading ? 'progress_activity' : 'search'}
+                    </span>
+                    <span>{loading ? 'Searching...' : 'Search Trains'}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            {error && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-2.5 text-xs text-rose-800">
+                <span className="material-symbols-outlined text-rose-600 text-[18px]">error</span>
+                <span className="flex-1 font-medium">{error}</span>
                 <button
                   type="button"
-                  onClick={() =>
-                    setSelectedTrain((prev) => ({
-                      ...prev,
-                      lastRefreshed: 'Just Now'
-                    }))
-                  }
-                  className="px-3 py-1.5 rounded-lg bg-[#f0f3ff] border border-blue-100 text-xs text-[#111c2d] hover:bg-[#e7eeff] transition-all flex items-center gap-2 font-mono"
+                  onClick={() => searchTrainsBetween(fromStation, toStation, journeyDate)}
+                  className="px-2.5 py-1 rounded bg-rose-100 hover:bg-rose-200 text-rose-900 font-bold text-[11px]"
                 >
-                  <span className="material-symbols-outlined text-[16px] text-[#00397f]">sync</span>
-                  <span>Refreshed: <strong>{selectedTrain.lastRefreshed}</strong></span>
+                  Retry
                 </button>
               </div>
-            </div>
-
-            {/* Quick Metrics Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-[#f0f3ff] border border-blue-100 p-4 rounded-xl space-y-1">
-                <span className="text-[10px] font-mono text-[#737783] uppercase tracking-wider">Current Delay</span>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-xl font-bold font-mono text-[#ba1a1a]">{selectedTrain.currentDelay}</span>
-                  <span className="text-[10px] text-[#737783]">from schedule</span>
-                </div>
-                <span className="text-[11px] text-[#424752] block">Live signal pacing</span>
-              </div>
-
-              <div className="bg-[#f0f3ff] border border-blue-100 p-4 rounded-xl space-y-1">
-                <span className="text-[10px] font-mono text-[#737783] uppercase tracking-wider">Predicted Delay</span>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-xl font-bold font-mono text-[#ba1a1a]">{selectedTrain.predictedDelay}</span>
-                  <span className="text-[10px] text-[#737783]">at dest.</span>
-                </div>
-                <span className="text-[11px] text-[#005f41] font-semibold block">AI section modeling</span>
-              </div>
-
-              <div className="bg-[#f0f3ff] border border-blue-100 p-4 rounded-xl space-y-1">
-                <span className="text-[10px] font-mono text-[#737783] uppercase tracking-wider">Expected Arrival</span>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-xl font-bold font-mono text-[#00397f]">{selectedTrain.expectedArrival}</span>
-                  <span className="text-[10px] text-[#737783]">IST</span>
-                </div>
-                <span className="text-[11px] text-[#737783] block">Sched: {selectedTrain.scheduledArrival}</span>
-              </div>
-
-              <div className="bg-[#f0f3ff] border border-blue-100 p-4 rounded-xl space-y-1">
-                <span className="text-[10px] font-mono text-[#737783] uppercase tracking-wider">Current Location</span>
-                <div className="text-sm font-bold text-[#111c2d] truncate mt-1">{selectedTrain.currentLocation}</div>
-                <span className="text-[11px] text-[#424752] block truncate">{selectedTrain.speed}</span>
-              </div>
-            </div>
-
-            {/* Journey Timeline */}
-            <div className="space-y-4 pt-2">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-sm text-[#111c2d]">Journey Progress</h3>
-                <div className="flex items-center gap-4 text-xs font-mono text-[#737783]">
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#00397f]"></span> Passed</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Current</span>
-                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-slate-300"></span> Upcoming</span>
-                </div>
-              </div>
-
-              <div className="relative pl-6 space-y-3">
-                <div className="absolute left-[11px] top-3 bottom-3 w-0.5 bg-blue-100"></div>
-
-                {/* Stop 1 */}
-                <div className="relative flex items-center justify-between bg-[#f0f3ff]/60 border border-blue-100 p-3 rounded-xl">
-                  <span className="absolute -left-[19px] top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#00397f] ring-4 ring-white"></span>
-                  <div>
-                    <span className="font-bold text-xs text-[#111c2d]">New Delhi (NDLS)</span>
-                    <span className="text-[11px] text-[#424752] block">Platform 2 • Dep 06:10</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs font-bold text-emerald-700 font-mono">On Time</span>
-                    <span className="text-[10px] text-[#737783] block">Departed</span>
-                  </div>
-                </div>
-
-                {/* Stop 2 */}
-                <div className="relative flex items-center justify-between bg-[#f0f3ff]/60 border border-blue-100 p-3 rounded-xl">
-                  <span className="absolute -left-[19px] top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#00397f] ring-4 ring-white"></span>
-                  <div>
-                    <span className="font-bold text-xs text-[#111c2d]">Aligarh Jn (ALJN)</span>
-                    <span className="text-[11px] text-[#424752] block">Platform 3 • Arr 07:35</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs font-bold text-amber-600 font-mono">+2 min</span>
-                    <span className="text-[10px] text-[#737783] block">Departed</span>
-                  </div>
-                </div>
-
-                {/* Stop 3 - Current */}
-                <div className="relative flex items-center justify-between bg-[#e7eeff] border border-[#00397f]/40 p-3 rounded-xl shadow-sm">
-                  <span className="absolute -left-[21px] top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-emerald-500 animate-pulse ring-4 ring-blue-200"></span>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-[#111c2d] font-mono">{selectedTrain.currentLocation}</span>
-                      <span className="bg-[#00397f] text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase">Current Stop</span>
-                    </div>
-                    <span className="text-[11px] text-[#424752] block">Platform 2 • Dep Sched 10:02</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs font-bold text-[#ba1a1a] font-mono">{selectedTrain.currentDelay} late</span>
-                    <span className="text-[10px] text-emerald-700 font-medium block">Halted (2m of 3m)</span>
-                  </div>
-                </div>
-
-                {/* Stop 4 */}
-                <div className="relative flex items-center justify-between bg-[#f0f3ff]/40 border border-slate-200 p-3 rounded-xl opacity-75">
-                  <span className="absolute -left-[19px] top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-slate-300 ring-4 ring-white"></span>
-                  <div>
-                    <span className="font-bold text-xs text-[#111c2d]">Kanpur Central (CNB)</span>
-                    <span className="text-[11px] text-[#424752] block">Platform 1 • Est. 12:28 (Sched 12:15)</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xs font-bold text-[#ba1a1a] font-mono">+13 min</span>
-                    <span className="text-[10px] text-[#737783] block">Upcoming (142 km)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* AI Delay Explanation Box */}
-            <div className="p-4 rounded-xl bg-[#f0f3ff] border border-blue-100 flex items-start gap-3">
-              <span className="material-symbols-outlined text-[#00397f] text-[22px] shrink-0 mt-0.5">lightbulb</span>
-              <div className="text-xs">
-                <span className="font-bold text-[#111c2d] uppercase tracking-wider font-mono">AI Delay Context:</span>
-                <p className="text-[#424752] mt-1 leading-relaxed">{selectedTrain.aiExplanation}</p>
-              </div>
-            </div>
+            )}
           </section>
-        </div>
-      )}
 
-      {/* ========================================================== */}
-      {/* SCREEN 2: LIVE TRAIN STATUS (12003 SWARNA SHATABDI) */}
-      {/* ========================================================== */}
-      {activeTab === 'live-status' && (
-        <div className="space-y-6">
-          {/* Top Summary Banner */}
-          <section className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-sm space-y-6">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-[#d8e2ff] border border-blue-200 text-[#00397f] flex items-center justify-center shrink-0 shadow-sm">
-                  <span className="material-symbols-outlined text-[32px]">directions_transit</span>
-                </div>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-2xl font-bold text-[#111c2d]">12003</span>
-                    <h1 className="text-xl font-bold text-[#111c2d]">Swarna Shatabdi Express</h1>
-                    <span className="px-3 py-1 rounded-full bg-[#85f8c4]/40 border border-emerald-300 text-[#005137] text-xs font-semibold flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
-                      Running
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#424752] mt-1 flex items-center gap-2">
-                    <span className="font-bold text-[#111c2d]">New Delhi (NDLS)</span>
-                    <span className="material-symbols-outlined text-[14px] text-[#737783]">arrow_forward</span>
-                    <span className="font-bold text-[#111c2d]">Lucknow (LJN)</span>
-                    <span className="text-slate-300">•</span>
-                    <span>Northern Railway</span>
-                  </p>
-                </div>
-              </div>
-
-              {/* Metric Pills */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full lg:w-auto">
-                <div className="bg-[#f0f3ff] border border-blue-100 rounded-xl p-3">
-                  <span className="text-[10px] font-mono text-[#737783] uppercase">Current Delay</span>
-                  <div className="text-lg font-bold font-mono text-[#ba1a1a] mt-0.5">+8 min</div>
-                  <span className="text-[10px] text-[#424752]">As per live station report</span>
-                </div>
-
-                <div className="bg-[#f0f3ff] border border-blue-100 rounded-xl p-3">
-                  <span className="text-[10px] font-mono text-[#737783] uppercase">Predicted Delay</span>
-                  <div className="text-lg font-bold font-mono text-[#ba1a1a] mt-0.5">+20 min</div>
-                  <span className="text-[10px] text-[#424752]">At destination terminal</span>
-                </div>
-
-                <div className="bg-[#f0f3ff] border border-blue-100 rounded-xl p-3">
-                  <span className="text-[10px] font-mono text-[#00397f] uppercase font-semibold">Expected Arrival (LJN)</span>
-                  <div className="text-lg font-bold font-mono text-[#00397f] mt-0.5">16:39</div>
-                  <span className="text-[10px] text-[#737783]">Sched: 16:19 (+20m)</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Horizontal Route Progression */}
-            <div className="pt-4 border-t border-slate-200/80 space-y-3">
-              <div className="flex items-center justify-between text-xs font-mono">
-                <span className="text-[#00397f] font-bold flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px]">timeline</span> Route Progression
+          {/* Results Header & Sorting */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
+            <h2 className="text-sm sm:text-base font-bold text-slate-800 tracking-tight">
+              {loading ? (
+                <span className="text-slate-400">Searching trains...</span>
+              ) : (
+                <span>
+                  {processedTrains.length} Trains found between {originName} ({originCode}) and {destName} ({destCode})
                 </span>
-                <span className="text-[#737783]">Current Stop: Lucknow Jn (Stop 6 of 10)</span>
-              </div>
+              )}
+            </h2>
 
-              <div className="overflow-x-auto pb-2">
-                <div className="min-w-[620px] flex items-center justify-between relative py-4 px-2">
-                  {/* Track line */}
-                  <div className="absolute left-4 right-4 h-1.5 bg-slate-200 rounded-full z-0 top-1/2 -translate-y-1/2"></div>
-                  <div className="absolute left-4 w-[54%] h-1.5 bg-[#00397f] rounded-full z-0 top-1/2 -translate-y-1/2"></div>
-
-                  {[
-                    { code: 'NDLS', time: '06:00', passed: true },
-                    { code: 'GZB', time: '06:27', passed: true },
-                    { code: 'ALJN', time: '07:25', passed: true },
-                    { code: 'TDL', time: '08:18', passed: true },
-                    { code: 'ETW', time: '10:13', passed: true },
-                    { code: 'LJN', time: '13:28', current: true },
-                    { code: 'ON', time: '14:10', upcoming: true }
-                  ].map((st) => (
-                    <div key={st.code} className="relative z-10 flex flex-col items-center">
-                      {st.current ? (
-                        <div className="relative flex items-center justify-center">
-                          <span className="absolute w-7 h-7 rounded-full bg-[#00397f]/20 animate-ping"></span>
-                          <div className="w-6 h-6 rounded-full bg-[#00397f] text-white flex items-center justify-center shadow-sm">
-                            <span className="material-symbols-outlined text-[14px]">train</span>
-                          </div>
-                        </div>
-                      ) : st.passed ? (
-                        <div className="w-3.5 h-3.5 rounded-full bg-[#00397f] ring-2 ring-white"></div>
-                      ) : (
-                        <div className="w-3.5 h-3.5 rounded-full bg-slate-300 ring-2 ring-white"></div>
-                      )}
-                      <span className={`text-xs font-mono font-bold mt-1.5 ${st.current ? 'text-[#00397f]' : 'text-[#111c2d]'}`}>
-                        {st.code}
-                      </span>
-                      <span className="text-[10px] font-mono text-[#737783]">{st.time}</span>
-                    </div>
-                  ))}
-                </div>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <span className="text-xs text-slate-500 font-medium">Sort by:</span>
+              <div className="relative">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="appearance-none bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-mono font-bold py-1.5 pl-3 pr-8 rounded-xl focus:outline-none focus:border-[#0284C7] cursor-pointer shadow-2xs"
+                >
+                  <option value="departure_asc">Departure (Earliest)</option>
+                  <option value="departure_desc">Departure (Latest)</option>
+                  <option value="arrival_asc">Arrival (Earliest)</option>
+                  <option value="duration_asc">Duration (Fastest)</option>
+                </select>
+                <span className="material-symbols-outlined text-slate-400 text-[16px] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+                  unfold_more
+                </span>
               </div>
             </div>
-          </section>
+          </div>
+
+          {/* Loading Skeletons */}
+          {loading && (
+            <div className="space-y-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs animate-pulse flex items-center justify-between gap-4">
+                  <div className="w-16 h-10 bg-slate-200 rounded-xl" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-slate-200 rounded w-1/3" />
+                    <div className="h-3 bg-slate-100 rounded w-1/4" />
+                  </div>
+                  <div className="w-48 h-8 bg-slate-200 rounded" />
+                  <div className="w-24 h-9 bg-slate-100 rounded-xl" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Handcrafted Horizontal Train Cards List */}
+          {!loading && processedTrains.length > 0 && (
+            <div className="space-y-3">
+              {processedTrains.map((item, idx) => (
+                <TrainCard
+                  key={item?.train?.number || idx}
+                  item={item}
+                  originCode={originCode}
+                  originName={originName}
+                  destCode={destCode}
+                  destName={destName}
+                  onSelectTrain={handleSelectTrainCard}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
+      {/* ========================================================================= */}
+      {/* SECTION 2: LIVE TRAIN / STATUS VIEW (Matching Reference Image)            */}
+      {/* ========================================================================= */}
+      {activeTab === 'live-status' && (
+        <LiveTrainStatusSection
+          trainSchedule={trainSchedule}
+          trainLive={trainLive}
+          selectedTrainNo={selectedTrainNo}
+          journeyDate={journeyDate}
+          lastRefreshedTime={lastRefreshedTime}
+          onDateChange={setJourneyDate}
+          onBackToSearch={handleBackToSearch}
+          onRefresh={() => loadSingleTrainLive(selectedTrainNo, journeyDate, true)}
+          loading={trainLoading}
+          error={trainError}
+        />
+      )}
+
       {/* ========================================================== */}
-      {/* SCREEN 3: ABOUT RAILRADAR (PASSENGER VIEW) */}
+      {/* SECTION 3: ABOUT RAILRADAR                                 */}
       {/* ========================================================== */}
       {activeTab === 'about' && (
-        <div className="space-y-8">
-          {/* Header Banner */}
-          <div className="text-center max-w-3xl mx-auto space-y-3 py-4">
-            <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-[#d8e2ff] border border-blue-200 text-[#00397f] text-xs font-bold font-mono">
-              <span className="w-2 h-2 rounded-full bg-[#00397f] animate-pulse"></span>
+        <div className="space-y-6">
+          <div className="text-center max-w-3xl mx-auto space-y-2 py-4">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-[#00A3C4] text-xs font-bold font-mono">
+              <span className="w-2 h-2 rounded-full bg-[#00A3C4] animate-pulse" />
               <span>Passenger-First Rail Intelligence</span>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-[#111c2d] tracking-tight">About RailRadar</h1>
-            <p className="text-xs sm:text-sm text-[#424752] leading-relaxed">
-              Intelligent, calm, and trustworthy journey updates for millions of Indian Railways passengers every day.
+            <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">About RailRadar</h1>
+            <p className="text-xs sm:text-sm text-slate-500 max-w-xl mx-auto leading-relaxed">
+              Real-time track telemetry, verified satellite positioning, and passenger-friendly delay information across Indian Railways.
             </p>
           </div>
 
-          {/* Primary Narrative Card */}
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs space-y-6">
             <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
               <div className="flex-1 space-y-4">
-                <div className="flex items-center gap-2 text-[#00397f] font-mono text-xs font-bold uppercase tracking-wider">
+                <div className="flex items-center gap-2 text-[#0284C7] font-mono text-xs font-bold uppercase tracking-wider">
                   <span className="material-symbols-outlined text-[18px]">verified</span>
-                  <span>Why We Built RailRadar</span>
+                  <span>Why RailRadar Was Built</span>
                 </div>
-                <p className="text-xs sm:text-sm text-[#111c2d] leading-relaxed">
-                  RailRadar is designed from the ground up for passengers and their families. While traditional trackers only show where a train was hours ago, RailRadar pairs real-time track telemetry with predictive forecasting to answer the four questions that matter most:
+                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
+                  Traditional tracking systems update erratically and communicate in cryptic controller shorthand. RailRadar bridges the gap between official block signal telemetry and passenger peace of mind.
                 </p>
 
-                {/* 4 Core Questions */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   {[
-                    '1. Where is my train?',
-                    '2. How late is it?',
+                    '1. Where is my train right now?',
+                    '2. Exactly how late is it running?',
                     '3. When will it actually arrive?',
-                    '4. Why is it delayed?'
+                    '4. What caused the delay?',
                   ].map((q, idx) => (
-                    <div key={idx} className="flex items-center gap-3 p-3 bg-[#f0f3ff] border border-blue-100 rounded-xl">
-                      <span className="w-6 h-6 rounded-full bg-[#00397f] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                    <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                      <span className="w-6 h-6 rounded-full bg-[#0284C7] text-white flex items-center justify-center text-xs font-bold shrink-0">
                         {idx + 1}
                       </span>
-                      <span className="text-xs font-bold text-[#111c2d]">{q.substring(3)}</span>
+                      <span className="text-xs font-bold text-slate-800">{q.substring(3)}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Graphic Card */}
-              <div className="w-full lg:w-80 shrink-0 p-6 bg-[#f0f3ff] border border-blue-100 rounded-xl flex flex-col items-center justify-center text-center space-y-4">
-                <div className="w-16 h-16 rounded-full bg-[#d8e2ff] border border-blue-200 flex items-center justify-center text-[#00397f]">
-                  <span className="material-symbols-outlined text-[36px]">sensors</span>
+              <div className="w-full lg:w-80 shrink-0 p-6 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center text-center space-y-3">
+                <div className="w-14 h-14 rounded-2xl bg-cyan-50 border border-cyan-200 flex items-center justify-center text-[#00A3C4]">
+                  <span className="material-symbols-outlined text-[32px]">satellite_alt</span>
                 </div>
                 <div className="text-xs space-y-1">
-                  <span className="font-bold text-[#111c2d] block">Sub-second Latency GPS</span>
-                  <span className="text-[#424752] text-[11px] block">Trackside transponders + AI section engine</span>
-                  <span className="font-mono text-emerald-700 font-bold block pt-1">95 km/h Nominal Velocity</span>
+                  <span className="font-bold text-slate-900 block">Sub-Second Satellite Telemetry</span>
+                  <span className="text-slate-500 text-[11px] block">Live transponders & RailRadar V1 API</span>
+                  <span className="font-mono text-emerald-600 font-bold block pt-1">Live Track Monitored</span>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Three Pillars */}
-          <div className="space-y-4">
-            <div className="text-center space-y-1">
-              <span className="text-xs font-mono uppercase text-[#005f41] font-semibold">The Architecture of Clarity</span>
-              <h2 className="text-xl font-bold text-[#111c2d]">Three Pillars of Passenger Confidence</h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Pillar 1 */}
-              <div className="bg-white border border-slate-200/90 rounded-2xl p-6 flex flex-col justify-between space-y-4 shadow-sm">
-                <div className="space-y-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#d8e2ff] text-[#00397f] flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[24px]">train</span>
-                  </div>
-                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[#f0f3ff] text-[#00397f] font-bold">Pillar 01</span>
-                  <h3 className="text-base font-bold text-[#111c2d]">Live Train Status</h3>
-                  <p className="text-xs text-[#424752] leading-relaxed">
-                    Direct GPS tracking and signal block verification across every major junction in India, updated continuously.
-                  </p>
-                </div>
-                <span className="text-[11px] text-emerald-700 font-mono font-medium">Auto-refreshed via trackside transponders</span>
-              </div>
-
-              {/* Pillar 2 */}
-              <div className="bg-white border border-slate-200/90 rounded-2xl p-6 flex flex-col justify-between space-y-4 shadow-sm">
-                <div className="space-y-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#d8e2ff] text-[#00397f] flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[24px]">insights</span>
-                  </div>
-                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[#f0f3ff] text-[#00397f] font-bold">Pillar 02</span>
-                  <h3 className="text-base font-bold text-[#111c2d]">Predictive ETA</h3>
-                  <p className="text-xs text-[#424752] leading-relaxed">
-                    Network-aware arrival forecasting that accounts for single-line crossovers, congestion, and sectional headway.
-                  </p>
-                </div>
-                <span className="text-[11px] text-[#00397f] font-mono font-medium">Constantly recalculates stopover delays</span>
-              </div>
-
-              {/* Pillar 3 */}
-              <div className="bg-white border border-slate-200/90 rounded-2xl p-6 flex flex-col justify-between space-y-4 shadow-sm">
-                <div className="space-y-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#d8e2ff] text-[#00397f] flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[24px]">forum</span>
-                  </div>
-                  <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-[#f0f3ff] text-[#00397f] font-bold">Pillar 03</span>
-                  <h3 className="text-base font-bold text-[#111c2d]">Human Delay Explanations</h3>
-                  <p className="text-xs text-[#424752] leading-relaxed">
-                    Plain-English summaries of weather slowdowns, track caution orders, or platform occupancy—without technical jargon.
-                  </p>
-                </div>
-                <span className="text-[11px] text-amber-700 font-mono font-medium">Replaces raw train controller acronyms</span>
               </div>
             </div>
           </div>

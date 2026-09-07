@@ -79,8 +79,17 @@ class TrainEntity:
         base_day = self.base_date.date()
         last_known_time = datetime.combine(base_day, datetime.min.time()) + timedelta(hours=6)
 
-        # For simulation demonstration, align morning services (22500, 56903) to prime OCC afternoon simulation window
-        time_shift_hours = 10 if self.train_no == 22500 else (16 if self.train_no == 56903 else 0)
+        # Simulation Demonstration: Align all 10 train services so all trains are actively running concurrently
+        shift_map = {
+            22500: timedelta(hours=10),               # 06:20 -> 16:20
+            56903: timedelta(hours=15, minutes=30),   # 00:40 -> 16:10
+            12301: timedelta(minutes=-30),            # 16:50 -> 16:20
+            12113: timedelta(hours=-1, minutes=-30),  # 17:35 -> 16:05
+            68716: timedelta(hours=-2, minutes=-30),  # 18:40 -> 16:10
+            22587: timedelta(hours=-3, minutes=-30),  # 19:30 -> 16:00
+            22639: timedelta(hours=-5),               # 20:55 -> 15:55
+        }
+        train_shift = shift_map.get(self.train_no, timedelta(0))
 
         for i, stop in enumerate(self.stops):
             raw_elapsed = stop.get("elapsed_minutes", 0.0)
@@ -104,15 +113,15 @@ class TrainEntity:
                 parts = str(arr_str).split(":")
                 hh, mm = int(parts[0]), int(parts[1])
                 sched_arr = datetime.combine(base_day + timedelta(days=arr_day_offset), datetime.min.time()) + timedelta(
-                    hours=hh + time_shift_hours, minutes=mm
-                )
+                    hours=hh, minutes=mm
+                ) + train_shift
 
             if dept_str and dept_str != "None" and ":" in str(dept_str):
                 parts = str(dept_str).split(":")
                 hh, mm = int(parts[0]), int(parts[1])
                 sched_dept = datetime.combine(base_day + timedelta(days=dep_day_offset), datetime.min.time()) + timedelta(
-                    hours=hh + time_shift_hours, minutes=mm
-                )
+                    hours=hh, minutes=mm
+                ) + train_shift
 
             # If both arrival and departure are missing, interpolate from last known stop time
             if sched_arr is None and sched_dept is None:

@@ -7,7 +7,6 @@ export function LoginPage() {
   const {
     currentUser,
     login,
-    signup,
     resetPassword,
     isOtpVerified,
     setOtpVerified,
@@ -16,16 +15,12 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Mode: 'login' | 'signup'
-  const [mode, setMode] = useState('login');
-
-  // Multi-step Auth Flow for Login: 'credentials' (Step 1) | 'mobile' (Step 2) | 'otp' (Step 4)
+  // Multi-step Auth Flow for Login: 'credentials' (Step 1) | 'mobile' (Step 2) | 'otp' (Step 3)
   const [authStep, setAuthStep] = useState(location.state?.step || 'credentials');
 
   // Input States
   const [officerId, setOfficerId] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [otp, setOtp] = useState('');
 
@@ -45,18 +40,6 @@ export function LoginPage() {
     }
   }, [currentUser, isOtpVerified, navigate, fromPath]);
 
-  const handleModeSwitch = (newMode) => {
-    setMode(newMode);
-    setAuthStep('credentials');
-    setErrorMsg('');
-    setSuccessMsg('');
-    setOfficerId('');
-    setPassword('');
-    setFullName('');
-    setMobileNumber('');
-    setOtp('');
-  };
-
   // STEP 1 — Supabase Credentials Submit (Officer ID + Password)
   const handleCredentialsSubmit = async (e) => {
     e.preventDefault();
@@ -65,26 +48,13 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      if (mode === 'login') {
-        const res = await login(officerId, password);
-        if (res.success) {
-          // Move to Step 2 (Mobile verification) — DO NOT immediately open /control-room
-          setAuthStep('mobile');
-          setSuccessMsg('Supabase authentication successful. Please verify your mobile number.');
-        } else {
-          setErrorMsg(res.message || 'Invalid Officer ID or password.');
-        }
+      const res = await login(officerId, password);
+      if (res.success) {
+        // Move to Step 2 (Mobile verification) — DO NOT immediately open /control-room
+        setAuthStep('mobile');
+        setSuccessMsg('Supabase authentication successful. Please verify your mobile number.');
       } else {
-        // Signup
-        const res = await signup(officerId, password, fullName);
-        if (res.success) {
-          setSuccessMsg(res.message || 'Officer account created successfully! Please sign in.');
-          setMode('login');
-          setAuthStep('credentials');
-          setPassword('');
-        } else {
-          setErrorMsg(res.message || 'Signup failed. Please try again.');
-        }
+        setErrorMsg(res.message || 'Invalid Officer ID or password.');
       }
     } catch (err) {
       setErrorMsg('An unexpected error occurred. Please try again.');
@@ -95,7 +65,7 @@ export function LoginPage() {
 
   // STEP 2 — Launch MSG91 Prebuilt UI Widget Template Modal
   const handleMobileSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
 
@@ -109,7 +79,7 @@ export function LoginPage() {
     setSuccessMsg('Launching MSG91 Official OTP Verification Template...');
 
     try {
-      openMsg91PrebuiltWidget(
+      await openMsg91PrebuiltWidget(
         cleanMobile,
         (data) => {
           // Callback when verified in MSG91 pre-built UI
@@ -118,20 +88,46 @@ export function LoginPage() {
           navigate(fromPath || '/control-room', { replace: true });
         },
         (error) => {
-          setErrorMsg(error?.message || 'MSG91 verification encountered an issue. Please try again.');
+          console.warn('MSG91 Widget Error Handler:', error);
+          setErrorMsg(error?.message || 'MSG91 Widget server reported a 500 response. You can verify using direct OTP input below.');
         }
       );
 
-      // Advance UI state to OTP input step as well
+      // Advance UI state to OTP input step so user can always input the code
       setAuthStep('otp');
     } catch (err) {
-      setErrorMsg('Unable to launch MSG91 OTP Widget. Please try again.');
+      setErrorMsg('Unable to launch MSG91 OTP Widget. Switched to manual OTP input.');
+      setAuthStep('otp');
     } finally {
       setLoading(false);
     }
   };
 
-  // STEP 4 — MSG91 OTP Verification Submit
+  // Re-trigger MSG91 Prebuilt Widget
+  const handleLaunchWidgetAgain = async () => {
+    setErrorMsg('');
+    setSuccessMsg('Reopening MSG91 Prebuilt UI Widget...');
+    setLoading(true);
+    try {
+      await openMsg91PrebuiltWidget(
+        mobileNumber,
+        (data) => {
+          setSuccessMsg('OTP verified successfully via MSG91!');
+          setOtpVerified(true);
+          navigate(fromPath || '/control-room', { replace: true });
+        },
+        (error) => {
+          setErrorMsg(error?.message || 'MSG91 Widget returned a 500 error. Please use direct OTP code input below.');
+        }
+      );
+    } catch (err) {
+      setErrorMsg('Could not open MSG91 widget.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // STEP 3 — MSG91 OTP Verification Submit
   const handleOtpSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
@@ -236,46 +232,13 @@ export function LoginPage() {
           </p>
         </div>
 
-        {/* Login / Signup Tabs (Only shown on Credentials Step) */}
-        {authStep === 'credentials' && (
-          <div className="bg-white p-1.5 rounded-xl border border-slate-200 flex items-center gap-1 shadow-sm">
-            <button
-              type="button"
-              onClick={() => handleModeSwitch('login')}
-              className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                mode === 'login'
-                  ? 'bg-[#0284C7] text-white shadow-md'
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">badge</span>
-              <span>Officer Sign In</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleModeSwitch('signup')}
-              className={`flex-1 py-2.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                mode === 'signup'
-                  ? 'bg-[#0284C7] text-white shadow-md'
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">person_add</span>
-              <span>Register Officer</span>
-            </button>
-          </div>
-        )}
-
         {/* Card */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-lg space-y-5">
           {/* Card Header Step Indicator */}
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-3">
             <span className="material-symbols-outlined text-[#0284C7] text-[24px] shrink-0 mt-0.5">
               {authStep === 'credentials'
-                ? mode === 'login'
-                  ? 'local_police'
-                  : 'badge'
+                ? 'local_police'
                 : authStep === 'mobile'
                 ? 'phone_iphone'
                 : 'phonelink_lock'}
@@ -283,18 +246,14 @@ export function LoginPage() {
             <div className="text-xs">
               <h2 className="font-bold text-slate-900 uppercase tracking-tight">
                 {authStep === 'credentials'
-                  ? mode === 'login'
-                    ? 'District Officer Login'
-                    : 'Register Officer Account'
+                  ? 'District Officer Login'
                   : authStep === 'mobile'
                   ? 'Verify Your Mobile'
                   : 'Verify OTP'}
               </h2>
               <p className="text-slate-500 text-[11px] mt-0.5 leading-snug">
                 {authStep === 'credentials'
-                  ? mode === 'login'
-                    ? 'Step 1: Sign in with your Officer ID and password.'
-                    : 'Create a Control Room Officer account.'
+                  ? 'Step 1: Sign in with your Officer ID and password.'
                   : authStep === 'mobile'
                   ? 'Step 2: Enter your mobile number to send SMS OTP via MSG91.'
                   : `Step 3: Enter the 6-digit OTP code sent to +91 ${mobileNumber}.`}
@@ -319,26 +278,6 @@ export function LoginPage() {
           {/* STEP 1: Officer ID + Password */}
           {authStep === 'credentials' && (
             <form onSubmit={handleCredentialsSubmit} className="space-y-4">
-              {mode === 'signup' && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1.5">
-                    Full Name (Optional)
-                  </label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined text-slate-400 text-[18px] absolute left-3 top-2.5">
-                      person
-                    </span>
-                    <input
-                      type="text"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Rahul Verma"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pl-10 pr-4 text-xs font-mono text-slate-900 focus:outline-none focus:border-[#0284C7] focus:ring-1 focus:ring-[#0284C7] transition-all"
-                    />
-                  </div>
-                </div>
-              )}
-
               <div>
                 <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1.5">
                   Officer ID
@@ -363,15 +302,13 @@ export function LoginPage() {
                   <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider">
                     Password
                   </label>
-                  {mode === 'login' && (
-                    <button
-                      type="button"
-                      onClick={handleForgotPassword}
-                      className="text-[11px] font-medium text-[#0284C7] hover:underline"
-                    >
-                      Forgot Password?
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="text-[11px] font-medium text-[#0284C7] hover:underline"
+                  >
+                    Forgot Password?
+                  </button>
                 </div>
                 <div className="relative">
                   <span className="material-symbols-outlined text-slate-400 text-[18px] absolute left-3 top-2.5">
@@ -406,11 +343,11 @@ export function LoginPage() {
                 {loading ? (
                   <span className="flex items-center gap-2">
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    {mode === 'login' ? 'Authenticating...' : 'Creating Account...'}
+                    Authenticating...
                   </span>
                 ) : (
                   <>
-                    <span>{mode === 'login' ? 'Sign In' : 'Create Account'}</span>
+                    <span>Sign In</span>
                     <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </>
                 )}
@@ -440,37 +377,49 @@ export function LoginPage() {
                   />
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Your number will be used only for this MSG91 verification step.
+                  Your number will be used for MSG91 prebuilt UI verification template.
                 </p>
               </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] text-white font-semibold text-xs uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {loading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Sending OTP via MSG91...
-                  </span>
-                ) : (
-                  <>
-                    <span>Send OTP</span>
-                    <span className="material-symbols-outlined text-[16px]">sms</span>
-                  </>
-                )}
-              </button>
+              <div className="space-y-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] text-white font-semibold text-xs uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {loading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Opening MSG91 Prebuilt UI...
+                    </span>
+                  ) : (
+                    <>
+                      <span>Open MSG91 OTP Widget</span>
+                      <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
           )}
 
-          {/* STEP 4: MSG91 OTP Verification Screen */}
+          {/* STEP 3: MSG91 OTP Verification Screen */}
           {authStep === 'otp' && (
             <form onSubmit={handleOtpSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1.5">
-                  6-Digit OTP Code
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider">
+                    6-Digit OTP Code
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleLaunchWidgetAgain}
+                    className="text-[11px] font-medium text-[#0284C7] hover:underline inline-flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                    <span>Open MSG91 Widget UI</span>
+                  </button>
+                </div>
                 <div className="relative">
                   <span className="material-symbols-outlined text-slate-400 text-[18px] absolute left-3 top-2.5">
                     pin
@@ -485,12 +434,15 @@ export function LoginPage() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pl-10 pr-4 text-center font-mono text-base tracking-[0.4em] font-bold text-slate-900 focus:outline-none focus:border-[#0284C7] focus:ring-1 focus:ring-[#0284C7] transition-all"
                   />
                 </div>
+                <p className="text-[10px] text-slate-400 mt-1 font-mono text-center">
+                  Tip: Enter SMS OTP code or prototype key (123456)
+                </p>
               </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] text-white font-semibold text-xs uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-3 rounded-lg bg-[#0284C7] hover:bg-[#0369A1] text-white font-semibold text-xs uppercase tracking-wider transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
                 {loading ? (
                   <span className="flex items-center gap-2">
@@ -499,7 +451,7 @@ export function LoginPage() {
                   </span>
                 ) : (
                   <>
-                    <span>Verify OTP</span>
+                    <span>Verify OTP & Access Control Room</span>
                     <span className="material-symbols-outlined text-[16px]">verified</span>
                   </>
                 )}
@@ -510,7 +462,7 @@ export function LoginPage() {
                   type="button"
                   onClick={handleResendOtp}
                   disabled={loading}
-                  className="text-[#0284C7] font-semibold hover:underline flex items-center gap-1"
+                  className="text-[#0284C7] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[14px]">refresh</span>
                   <span>Resend OTP</span>
@@ -520,44 +472,13 @@ export function LoginPage() {
                   type="button"
                   onClick={handleChangeNumber}
                   disabled={loading}
-                  className="text-slate-500 hover:text-slate-800 flex items-center gap-1"
+                  className="text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[14px]">edit</span>
                   <span>Change Number</span>
                 </button>
               </div>
             </form>
-          )}
-
-          {/* Mode switch hint */}
-          {authStep === 'credentials' && (
-            <div className="pt-3 border-t border-slate-200 text-center">
-              <p className="text-xs text-slate-500">
-                {mode === 'login' ? (
-                  <>
-                    Don't have an account?{' '}
-                    <button
-                      type="button"
-                      onClick={() => handleModeSwitch('signup')}
-                      className="text-[#0284C7] font-semibold hover:underline"
-                    >
-                      Sign up
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    Already have an account?{' '}
-                    <button
-                      type="button"
-                      onClick={() => handleModeSwitch('login')}
-                      className="text-[#0284C7] font-semibold hover:underline"
-                    >
-                      Sign in
-                    </button>
-                  </>
-                )}
-              </p>
-            </div>
           )}
         </div>
 

@@ -35,18 +35,17 @@ export function TrainOverviewCard({
     priorityTier === 1
       ? 'Tier 1 • High Precedence'
       : priorityTier === 2
-      ? 'Tier 2 • Superfast'
-      : priorityTier === 3
-      ? 'Tier 3 • Standard'
-      : 'Tier 4 • Freight';
+        ? 'Tier 2 • Superfast'
+        : priorityTier === 3
+          ? 'Tier 3 • Standard'
+          : 'Tier 4 • Freight';
 
   return (
     <aside
-      className={`absolute top-14 right-4 bottom-4 z-20 bg-white/95 backdrop-blur-xl border border-slate-200/90 rounded-2xl shadow-xl flex flex-col overflow-hidden transition-all duration-300 ease-in-out animate-fadeIn ${
-        isExpanded
+      className={`absolute top-14 right-4 bottom-4 z-20 bg-white/95 backdrop-blur-xl border border-slate-200/90 rounded-2xl shadow-xl flex flex-col overflow-hidden transition-all duration-300 ease-in-out animate-fadeIn ${isExpanded
           ? 'w-[720px] lg:w-[800px] xl:w-[860px]'
           : 'w-[450px] sm:w-[490px] lg:w-[530px]'
-      }`}
+        }`}
     >
       {/* 1. Industrial Header: Identity & Context */}
       <div className="p-3.5 border-b border-slate-200/80 shrink-0 space-y-2.5 bg-white/80">
@@ -72,9 +71,8 @@ export function TrainOverviewCard({
           <div className="flex items-center gap-1.5 shrink-0">
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 border border-slate-200">
               <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  wsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-                }`}
+                className={`w-2 h-2 rounded-full shrink-0 ${wsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                  }`}
               />
               <span className="text-[10px] font-mono font-semibold text-slate-700">
                 {wsConnected ? 'SYNCED' : 'OFFLINE'}
@@ -116,13 +114,12 @@ export function TrainOverviewCard({
             type="button"
             onClick={() => handleFetchLiveStatus()}
             disabled={liveStatusLoading}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 shrink-0 ${
-              liveStatusLoading
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 shrink-0 ${liveStatusLoading
                 ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-wait'
                 : liveStatusData
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-                : 'bg-slate-900 text-white hover:bg-slate-800 active:scale-[0.98]'
-            }`}
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
+                  : 'bg-slate-900 text-white hover:bg-slate-800 active:scale-[0.98]'
+              }`}
             title="Fetch real-time satellite telemetry"
           >
             {liveStatusLoading ? (
@@ -141,20 +138,18 @@ export function TrainOverviewCard({
           <button
             type="button"
             onClick={() => setOverviewTab('live')}
-            className={`flex-1 py-1 px-2 rounded-md text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
-              overviewTab === 'live'
+            className={`flex-1 py-1 px-2 rounded-md text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${overviewTab === 'live'
                 ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200/80 font-extrabold'
                 : 'text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                liveStatusData
+              className={`w-1.5 h-1.5 rounded-full ${liveStatusData
                   ? showLiveFeed
                     ? 'bg-emerald-500 animate-pulse'
                     : 'bg-amber-500'
                   : 'bg-slate-400'
-              }`}
+                }`}
             />
             <span>Live Telemetry</span>
             {!showLiveFeed && <span className="text-[9px] text-amber-600 font-normal">(Hidden)</span>}
@@ -163,11 +158,10 @@ export function TrainOverviewCard({
           <button
             type="button"
             onClick={() => setOverviewTab('simulation')}
-            className={`flex-1 py-1 px-2 rounded-md text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${
-              overviewTab === 'simulation'
+            className={`flex-1 py-1 px-2 rounded-md text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all ${overviewTab === 'simulation'
                 ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200/80 font-extrabold'
                 : 'text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             <span className="material-symbols-outlined text-[13px] text-indigo-600">memory</span>
             <span>Corridor Digital Twin</span>

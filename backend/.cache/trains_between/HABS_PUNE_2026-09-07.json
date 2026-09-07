@@ -1,0 +1,1 @@
+{"success": true, "data": {"from": {"code": "HABS", "name": "Hyderabad Ind Ltd Siding"}, "to": {"code": "PUNE", "name": "Pune Jn"}, "trains": [], "count": 0}, "meta": {"timestamp": "2026-09-07T23:42:37+05:30", "traceId": "3643e6a1-a158-482e-9918-a605913d2169", "source": "database", "executionTime": 7}}

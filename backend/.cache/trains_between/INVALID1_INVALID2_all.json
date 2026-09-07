@@ -1,0 +1,1 @@
+{"success": true, "data": {"from": {"code": "INVALID1", "name": "INVALID1"}, "to": {"code": "INVALID2", "name": "INVALID2"}, "trains": [], "count": 0}, "meta": {"timestamp": "2026-09-07T22:07:11+05:30", "traceId": "35a840cb-6cf6-4da9-9845-21274eaf983c", "source": "database", "executionTime": 4}}

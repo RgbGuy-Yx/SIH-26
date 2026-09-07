@@ -16,6 +16,18 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       host: true,
       proxy: {
+        '/api': {
+          target: 'http://127.0.0.1:8000',
+          changeOrigin: true,
+        },
+        '/v1': {
+          target: 'http://127.0.0.1:8000',
+          changeOrigin: true,
+        },
+        '/ws': {
+          target: 'ws://127.0.0.1:8000',
+          ws: true,
+        },
         '/mcp-stitch': {
           target: 'https://stitch.googleapis.com',
           changeOrigin: true,

@@ -91,7 +91,9 @@ export function SimulationProvider({ children }) {
 
   // 3. WebSocket Connection & Real-Time Telemetry Stream
   useEffect(() => {
-    const wsUrl = (import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8000') + '/ws';
+    const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const defaultWsUrl = typeof window !== 'undefined' ? `${protocol}//${window.location.host}/ws` : 'ws://127.0.0.1:8000/ws';
+    const wsUrl = import.meta.env.VITE_WS_URL || defaultWsUrl;
     let isMounted = true;
 
     function connectWs() {

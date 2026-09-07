@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
 from app.api.simulation import router as simulation_router
-from app.api.trains import router as trains_router
+from app.api.trains import router as trains_router, v1_router, v1_lookup_router
 from app.websocket.connection_manager import manager
 from app.websocket.broadcaster import broadcaster
 
@@ -37,19 +37,34 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS Middleware setup
+# CORS Middleware setup - explicitly support localhost and 127.0.0.1 origins as well as credentials
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "*"
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Attach REST API routers
 app.include_router(health_router, prefix="/api", tags=["Health & System"])
 app.include_router(simulation_router, prefix="/api", tags=["Simulation"])
 app.include_router(trains_router, prefix="/api", tags=["Trains"])
+app.include_router(v1_router, tags=["RailRadar V1 Public Proxy"])
+app.include_router(v1_lookup_router, tags=["RailRadar V1 Lookup Proxy"])
+app.include_router(v1_router, prefix="/api", tags=["RailRadar V1 Public Proxy (API Alias)"])
+app.include_router(v1_lookup_router, prefix="/api", tags=["RailRadar V1 Lookup Proxy (API Alias)"])
+
 
 
 @app.get("/")

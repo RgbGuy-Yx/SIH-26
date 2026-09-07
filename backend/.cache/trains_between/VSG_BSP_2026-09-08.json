@@ -1,0 +1,1 @@
+{"success": true, "data": {"from": {"code": "VSG", "name": "Vasco-da-Gama"}, "to": {"code": "BSP", "name": "Bilaspur Jn"}, "trains": [], "count": 0}, "meta": {"timestamp": "2026-09-08T00:11:14+05:30", "traceId": "2ea17ff7-7c3c-495f-9831-4e914163deb4", "source": "database", "executionTime": 6}}

@@ -679,7 +679,7 @@ export function MapLibreRailwayMap({
         },
       });
 
-      // B. WebGL Train Body Circle (GPU rendered)
+      // B. WebGL Train Body Circle (GPU rendered with dynamic status colors)
       map.addLayer({
         id: 'railway-sim-trains-circle',
         type: 'circle',
@@ -687,13 +687,17 @@ export function MapLibreRailwayMap({
         paint: {
           'circle-radius': [
             'case',
-            ['==', ['get', 'is_selected'], 1], 8,
+            ['==', ['get', 'is_selected'], 1], 9,
+            ['==', ['get', 'status'], 'RUNNING'], 7,
+            ['==', ['get', 'status'], 'DELAYED'], 7,
             6
           ],
           'circle-color': [
             'case',
             ['==', ['get', 'is_selected'], 1], '#00A3C4',
-            '#1E293B'
+            ['==', ['get', 'status'], 'RUNNING'], '#10B981',
+            ['==', ['get', 'status'], 'DELAYED'], '#F59E0B',
+            '#6366F1'
           ],
           'circle-stroke-width': 2.2,
           'circle-stroke-color': '#FFFFFF',
@@ -711,21 +715,28 @@ export function MapLibreRailwayMap({
         },
       });
 
-      // D. WebGL Symbol Text Label (R-12003)
+      // D. WebGL Symbol Text Label (R-12003) - Visible for all trains across the national map
       map.addLayer({
         id: 'railway-sim-trains-label',
         type: 'symbol',
         source: 'railway-sim-trains',
-        filter: ['==', ['get', 'is_selected'], 1],
         layout: {
           'text-field': ['get', 'label'],
-          'text-size': 10,
+          'text-size': [
+            'case',
+            ['==', ['get', 'is_selected'], 1], 11,
+            9
+          ],
           'text-offset': [0, 1.4],
           'text-anchor': 'top',
           'text-allow-overlap': true,
         },
         paint: {
-          'text-color': '#0F172A',
+          'text-color': [
+            'case',
+            ['==', ['get', 'is_selected'], 1], '#0891B2',
+            '#1E293B'
+          ],
           'text-halo-color': '#FFFFFF',
           'text-halo-width': 2.5,
         },

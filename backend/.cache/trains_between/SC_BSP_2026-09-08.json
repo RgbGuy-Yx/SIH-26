@@ -1,0 +1,1 @@
+{"success": true, "data": {"from": {"code": "SC", "name": "Secunderabad Jn"}, "to": {"code": "BSP", "name": "Bilaspur Jn"}, "trains": [], "count": 0}, "meta": {"timestamp": "2026-09-08T00:10:57+05:30", "traceId": "609240e4-59d1-45be-ae09-dc98a959be71", "source": "database", "executionTime": 12}}

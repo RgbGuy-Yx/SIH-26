@@ -139,21 +139,323 @@ class TrainRouteCache:
 route_cache = TrainRouteCache()
 
 
+class TrainInfoCache:
+    """
+    24-hour cache for static train timetable, route stations, and platform assignments.
+    """
+    TTL_SECONDS = 24 * 3600  # 24 Hours
+
+    def __init__(self, cache_dir: Optional[Path] = None):
+        self._memory_cache: Dict[str, Dict[str, Any]] = {}
+        if cache_dir is None:
+            self.cache_dir = Path(__file__).resolve().parents[2] / ".cache" / "train_info"
+        else:
+            self.cache_dir = cache_dir
+
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Could not initialize disk cache directory at {self.cache_dir}: {e}")
+
+    def get(self, train_no: int, ignore_expiry: bool = False) -> Optional[Dict[str, Any]]:
+        key = str(train_no)
+        now = time.time()
+        if key in self._memory_cache:
+            entry = self._memory_cache[key]
+            age = now - entry["timestamp"]
+            if ignore_expiry or age < self.TTL_SECONDS:
+                return entry["payload"]
+
+        disk_file = self.cache_dir / f"{key}.json"
+        if disk_file.exists():
+            try:
+                mtime = disk_file.stat().st_mtime
+                age = now - mtime
+                if ignore_expiry or age < self.TTL_SECONDS:
+                    with open(disk_file, "r", encoding="utf-8") as f:
+                        payload = json.load(f)
+                    self._memory_cache[key] = {"timestamp": mtime, "payload": payload}
+                    return payload
+            except Exception:
+                pass
+        return None
+
+    def set(self, train_no: int, payload: Dict[str, Any]) -> None:
+        if not isinstance(payload, dict) or not payload.get("success"):
+            return
+        key = str(train_no)
+        now = time.time()
+        self._memory_cache[key] = {"timestamp": now, "payload": payload}
+        try:
+            disk_file = self.cache_dir / f"{key}.json"
+            with open(disk_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+        except Exception as e:
+            logger.warning(f"Failed to persist train info disk cache: {e}")
+
+
+# Global Singleton Train Info Cache
+train_info_cache = TrainInfoCache()
+
+
+class TrainBetweenCache:
+    """
+    6-hour cache for trains between stations query: GET /v1/trains/between/{from}/{to}
+    """
+    TTL_SECONDS = 6 * 3600  # 6 Hours
+
+    def __init__(self, cache_dir: Optional[Path] = None):
+        self._memory_cache: Dict[str, Dict[str, Any]] = {}
+        if cache_dir is None:
+            self.cache_dir = Path(__file__).resolve().parents[2] / ".cache" / "trains_between"
+        else:
+            self.cache_dir = cache_dir
+
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Could not initialize disk cache directory at {self.cache_dir}: {e}")
+
+    def _get_key(self, from_stn: str, to_stn: str, date: Optional[str] = None) -> str:
+        date_str = date.strip() if date else "all"
+        return f"{from_stn.upper()}_{to_stn.upper()}_{date_str}"
+
+    def get(self, from_stn: str, to_stn: str, date: Optional[str] = None, ignore_expiry: bool = False) -> Optional[Dict[str, Any]]:
+        key = self._get_key(from_stn, to_stn, date)
+        now = time.time()
+        if key in self._memory_cache:
+            entry = self._memory_cache[key]
+            if ignore_expiry or (now - entry["timestamp"] < self.TTL_SECONDS):
+                return entry["payload"]
+
+        disk_file = self.cache_dir / f"{key}.json"
+        if disk_file.exists():
+            try:
+                mtime = disk_file.stat().st_mtime
+                age = now - mtime
+                if ignore_expiry or age < self.TTL_SECONDS:
+                    with open(disk_file, "r", encoding="utf-8") as f:
+                        payload = json.load(f)
+                    self._memory_cache[key] = {"timestamp": mtime, "payload": payload}
+                    return payload
+            except Exception:
+                pass
+        return None
+
+    def set(self, from_stn: str, to_stn: str, payload: Dict[str, Any], date: Optional[str] = None) -> None:
+        if not isinstance(payload, dict) or not payload.get("success"):
+            return
+        key = self._get_key(from_stn, to_stn, date)
+        now = time.time()
+        self._memory_cache[key] = {"timestamp": now, "payload": payload}
+        try:
+            disk_file = self.cache_dir / f"{key}.json"
+            with open(disk_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+        except Exception as e:
+            logger.warning(f"Failed to persist train between disk cache: {e}")
+
+
+train_between_cache = TrainBetweenCache()
+
+
+class StationSearchCache:
+    """
+    24-hour cache for station search queries: GET /v1/lookup/search/stations?q={query}
+    """
+    TTL_SECONDS = 24 * 3600  # 24 Hours
+
+    def __init__(self, cache_dir: Optional[Path] = None):
+        self._memory_cache: Dict[str, Dict[str, Any]] = {}
+        if cache_dir is None:
+            self.cache_dir = Path(__file__).resolve().parents[2] / ".cache" / "station_search"
+        else:
+            self.cache_dir = cache_dir
+
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Could not initialize disk cache directory at {self.cache_dir}: {e}")
+
+    def _get_key(self, query: str) -> str:
+        return query.strip().lower()
+
+    def get(self, query: str, ignore_expiry: bool = False) -> Optional[Dict[str, Any]]:
+        key = self._get_key(query)
+        if not key:
+            return None
+        now = time.time()
+        if key in self._memory_cache:
+            entry = self._memory_cache[key]
+            if ignore_expiry or (now - entry["timestamp"] < self.TTL_SECONDS):
+                return entry["payload"]
+
+        disk_file = self.cache_dir / f"{key}.json"
+        if disk_file.exists():
+            try:
+                mtime = disk_file.stat().st_mtime
+                age = now - mtime
+                if ignore_expiry or age < self.TTL_SECONDS:
+                    with open(disk_file, "r", encoding="utf-8") as f:
+                        payload = json.load(f)
+                    self._memory_cache[key] = {"timestamp": mtime, "payload": payload}
+                    return payload
+            except Exception:
+                pass
+        return None
+
+    def set(self, query: str, payload: Dict[str, Any]) -> None:
+        if not isinstance(payload, dict) or not payload.get("success"):
+            return
+        key = self._get_key(query)
+        if not key:
+            return
+        now = time.time()
+        self._memory_cache[key] = {"timestamp": now, "payload": payload}
+        try:
+            disk_file = self.cache_dir / f"{key}.json"
+            with open(disk_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+        except Exception as e:
+            logger.warning(f"Failed to persist station search disk cache: {e}")
+
+
+station_search_cache = StationSearchCache()
+
+# Curated Fallback Hubs for Instant Response & Offline Resiliency
+FALLBACK_STATIONS_DATA: List[Dict[str, Any]] = [
+    {"code": "NDLS", "name": "New Delhi", "city": "Delhi", "popularity": 100, "isActive": True},
+    {"code": "NZM", "name": "Hazrat Nizamuddin", "city": "Delhi", "popularity": 95, "isActive": True},
+    {"code": "DLI", "name": "Old Delhi Junction", "city": "Delhi", "popularity": 90, "isActive": True},
+    {"code": "DEE", "name": "Delhi Sarai Rohilla", "city": "Delhi", "popularity": 85, "isActive": True},
+    {"code": "ANVT", "name": "Anand Vihar Terminal", "city": "Delhi", "popularity": 88, "isActive": True},
+    {"code": "DEC", "name": "Delhi Cantt", "city": "Delhi", "popularity": 80, "isActive": True},
+    {"code": "HWH", "name": "Howrah Junction", "city": "Kolkata", "popularity": 99, "isActive": True},
+    {"code": "SDAH", "name": "Sealdah", "city": "Kolkata", "popularity": 94, "isActive": True},
+    {"code": "KOAA", "name": "Kolkata Terminal", "city": "Kolkata", "popularity": 80, "isActive": True},
+    {"code": "SHM", "name": "Shalimar", "city": "Kolkata", "popularity": 75, "isActive": True},
+    {"code": "CSMT", "name": "Mumbai CSMT", "city": "Mumbai", "popularity": 99, "isActive": True},
+    {"code": "MMCT", "name": "Mumbai Central", "city": "Mumbai", "popularity": 96, "isActive": True},
+    {"code": "BDTS", "name": "Bandra Terminus", "city": "Mumbai", "popularity": 92, "isActive": True},
+    {"code": "LTT", "name": "Lokmanya Tilak Terminus", "city": "Mumbai", "popularity": 90, "isActive": True},
+    {"code": "DR", "name": "Dadar Central", "city": "Mumbai", "popularity": 88, "isActive": True},
+    {"code": "TNA", "name": "Thane", "city": "Mumbai", "popularity": 85, "isActive": True},
+    {"code": "KYN", "name": "Kalyan Junction", "city": "Mumbai", "popularity": 87, "isActive": True},
+    {"code": "BVI", "name": "Borivali", "city": "Mumbai", "popularity": 82, "isActive": True},
+    {"code": "PNVL", "name": "Panvel", "city": "Navi Mumbai", "popularity": 80, "isActive": True},
+    {"code": "MAS", "name": "Chennai Central (MGR)", "city": "Chennai", "popularity": 98, "isActive": True},
+    {"code": "MS", "name": "Chennai Egmore", "city": "Chennai", "popularity": 92, "isActive": True},
+    {"code": "TBM", "name": "Tambaram", "city": "Chennai", "popularity": 80, "isActive": True},
+    {"code": "SBC", "name": "KSR Bengaluru City", "city": "Bengaluru", "popularity": 98, "isActive": True},
+    {"code": "YPR", "name": "Yesvantpur Junction", "city": "Bengaluru", "popularity": 92, "isActive": True},
+    {"code": "SMVB", "name": "Sir M. Visvesvaraya Terminal", "city": "Bengaluru", "popularity": 88, "isActive": True},
+    {"code": "BNC", "name": "Bengaluru Cantt", "city": "Bengaluru", "popularity": 80, "isActive": True},
+    {"code": "CNB", "name": "Kanpur Central", "city": "Kanpur", "popularity": 95, "isActive": True},
+    {"code": "LJN", "name": "Lucknow Junction", "city": "Lucknow", "popularity": 94, "isActive": True},
+    {"code": "LKO", "name": "Lucknow Charbagh", "city": "Lucknow", "popularity": 93, "isActive": True},
+    {"code": "PRYJ", "name": "Prayagraj Junction", "city": "Prayagraj", "popularity": 92, "isActive": True},
+    {"code": "DDU", "name": "Pt. Deen Dayal Upadhyaya Jn", "city": "Mughalsarai", "popularity": 92, "isActive": True},
+    {"code": "BSB", "name": "Varanasi Junction", "city": "Varanasi", "popularity": 95, "isActive": True},
+    {"code": "BSBS", "name": "Banaras", "city": "Varanasi", "popularity": 85, "isActive": True},
+    {"code": "GKP", "name": "Gorakhpur Junction", "city": "Gorakhpur", "popularity": 89, "isActive": True},
+    {"code": "BPL", "name": "Bhopal Junction", "city": "Bhopal", "popularity": 93, "isActive": True},
+    {"code": "RKMP", "name": "Rani Kamlapati", "city": "Bhopal", "popularity": 91, "isActive": True},
+    {"code": "INDB", "name": "Indore Junction", "city": "Indore", "popularity": 90, "isActive": True},
+    {"code": "UJN", "name": "Ujjain Junction", "city": "Ujjain", "popularity": 89, "isActive": True},
+    {"code": "GWL", "name": "Gwalior Junction", "city": "Gwalior", "popularity": 87, "isActive": True},
+    {"code": "JHS", "name": "Virangana Lakshmibai Jhansi", "city": "Jhansi", "popularity": 90, "isActive": True},
+    {"code": "AGC", "name": "Agra Cantt", "city": "Agra", "popularity": 92, "isActive": True},
+    {"code": "AF", "name": "Agra Fort", "city": "Agra", "popularity": 82, "isActive": True},
+    {"code": "ADI", "name": "Ahmedabad Junction", "city": "Ahmedabad", "popularity": 95, "isActive": True},
+    {"code": "BRC", "name": "Vadodara Junction", "city": "Vadodara", "popularity": 92, "isActive": True},
+    {"code": "ST", "name": "Surat", "city": "Surat", "popularity": 92, "isActive": True},
+    {"code": "RTM", "name": "Ratlam Junction", "city": "Ratlam", "popularity": 88, "isActive": True},
+    {"code": "PUNE", "name": "Pune Junction", "city": "Pune", "popularity": 94, "isActive": True},
+    {"code": "NGP", "name": "Nagpur Junction", "city": "Nagpur", "popularity": 93, "isActive": True},
+    {"code": "HYB", "name": "Hyderabad Deccan", "city": "Hyderabad", "popularity": 90, "isActive": True},
+    {"code": "SC", "name": "Secunderabad Junction", "city": "Secunderabad", "popularity": 95, "isActive": True},
+    {"code": "KCG", "name": "Kacheguda", "city": "Hyderabad", "popularity": 88, "isActive": True},
+    {"code": "BZA", "name": "Vijayawada Junction", "city": "Vijayawada", "popularity": 93, "isActive": True},
+    {"code": "VSKP", "name": "Visakhapatnam Junction", "city": "Visakhapatnam", "popularity": 91, "isActive": True},
+    {"code": "PNBE", "name": "Patna Junction", "city": "Patna", "popularity": 95, "isActive": True},
+    {"code": "DNR", "name": "Danapur", "city": "Patna", "popularity": 85, "isActive": True},
+    {"code": "RJPB", "name": "Rajendra Nagar Terminal", "city": "Patna", "popularity": 86, "isActive": True},
+    {"code": "GHY", "name": "Guwahati", "city": "Guwahati", "popularity": 90, "isActive": True},
+    {"code": "KYQ", "name": "Kamakhya Junction", "city": "Guwahati", "popularity": 82, "isActive": True},
+    {"code": "NJP", "name": "New Jalpaiguri Junction", "city": "Siliguri", "popularity": 90, "isActive": True},
+    {"code": "JP", "name": "Jaipur Junction", "city": "Jaipur", "popularity": 94, "isActive": True},
+    {"code": "JU", "name": "Jodhpur Junction", "city": "Jodhpur", "popularity": 88, "isActive": True},
+    {"code": "AII", "name": "Ajmer Junction", "city": "Ajmer", "popularity": 86, "isActive": True},
+    {"code": "KOTA", "name": "Kota Junction", "city": "Kota", "popularity": 90, "isActive": True},
+    {"code": "ASR", "name": "Amritsar Junction", "city": "Amritsar", "popularity": 91, "isActive": True},
+    {"code": "CDG", "name": "Chandigarh Junction", "city": "Chandigarh", "popularity": 90, "isActive": True},
+    {"code": "LDH", "name": "Ludhiana Junction", "city": "Ludhiana", "popularity": 88, "isActive": True},
+    {"code": "JAT", "name": "Jammu Tawi", "city": "Jammu", "popularity": 92, "isActive": True},
+    {"code": "SVDK", "name": "Shri Mata Vaishno Devi Katra", "city": "Katra", "popularity": 94, "isActive": True},
+    {"code": "DDN", "name": "Dehradun", "city": "Dehradun", "popularity": 87, "isActive": True},
+    {"code": "HW", "name": "Haridwar Junction", "city": "Haridwar", "popularity": 90, "isActive": True},
+    {"code": "GZB", "name": "Ghaziabad Junction", "city": "Ghaziabad", "popularity": 88, "isActive": True},
+    {"code": "MB", "name": "Moradabad Junction", "city": "Moradabad", "popularity": 86, "isActive": True},
+    {"code": "BE", "name": "Bareilly Junction", "city": "Bareilly", "popularity": 86, "isActive": True},
+    {"code": "ALJN", "name": "Aligarh Junction", "city": "Aligarh", "popularity": 85, "isActive": True},
+    {"code": "MTJ", "name": "Mathura Junction", "city": "Mathura", "popularity": 89, "isActive": True},
+    {"code": "JBP", "name": "Jabalpur", "city": "Jabalpur", "popularity": 88, "isActive": True},
+    {"code": "R", "name": "Raipur Junction", "city": "Raipur", "popularity": 89, "isActive": True},
+    {"code": "BSP", "name": "Bilaspur Junction", "city": "Bilaspur", "popularity": 88, "isActive": True},
+    {"code": "BBS", "name": "Bhubaneswar", "city": "Bhubaneswar", "popularity": 92, "isActive": True},
+    {"code": "PURI", "name": "Puri", "city": "Puri", "popularity": 91, "isActive": True},
+    {"code": "CTC", "name": "Cuttack Junction", "city": "Cuttack", "popularity": 86, "isActive": True},
+    {"code": "TVC", "name": "Thiruvananthapuram Central", "city": "Thiruvananthapuram", "popularity": 92, "isActive": True},
+    {"code": "ERS", "name": "Ernakulam Junction (South)", "city": "Kochi", "popularity": 92, "isActive": True},
+    {"code": "ERN", "name": "Ernakulam Town (North)", "city": "Kochi", "popularity": 85, "isActive": True},
+    {"code": "CLT", "name": "Kozhikode Main", "city": "Kozhikode", "popularity": 86, "isActive": True},
+    {"code": "CBE", "name": "Coimbatore Junction", "city": "Coimbatore", "popularity": 90, "isActive": True},
+    {"code": "MDU", "name": "Madurai Junction", "city": "Madurai", "popularity": 89, "isActive": True},
+    {"code": "TPJ", "name": "Tiruchchirappalli Junction", "city": "Tiruchirappalli", "popularity": 88, "isActive": True},
+    {"code": "RU", "name": "Renigunta Junction", "city": "Tirupati", "popularity": 88, "isActive": True},
+    {"code": "TPTY", "name": "Tirupati", "city": "Tirupati", "popularity": 91, "isActive": True},
+    {"code": "GTL", "name": "Guntakal Junction", "city": "Guntakal", "popularity": 85, "isActive": True},
+    {"code": "MYS", "name": "Mysuru Junction", "city": "Mysuru", "popularity": 88, "isActive": True},
+    {"code": "MAQ", "name": "Mangaluru Central", "city": "Mangaluru", "popularity": 86, "isActive": True},
+    {"code": "MAJN", "name": "Mangaluru Junction", "city": "Mangaluru", "popularity": 84, "isActive": True},
+    {"code": "GOA", "name": "Madgaon Junction (MAO)", "city": "Goa", "popularity": 90, "isActive": True},
+    {"code": "MAO", "name": "Madgaon Junction", "city": "Goa", "popularity": 91, "isActive": True},
+]
+
+
 class LiveTrainProvider(ABC):
     """Abstract interface for external live train status providers."""
 
     @abstractmethod
-    async def get_live_train_status(self, train_no: int) -> LiveTrainStatus:
+    async def get_live_train_status(self, train_no: int, journey_date: Optional[str] = None) -> LiveTrainStatus:
         """Fetch and normalize real-time live running status for a train."""
         pass
+
+    async def get_train_info(self, train_no: int, force_refresh: bool = False) -> Dict[str, Any]:
+        """Fetch official static train schedule, timetable, stations, and platforms."""
+        return {"success": False, "error": "Not implemented for provider"}
+
+    async def get_trains_between(
+        self,
+        from_station: str,
+        to_station: str,
+        journey_date: Optional[str] = None,
+        force_refresh: bool = False
+    ) -> Dict[str, Any]:
+        """Fetch all trains operating between source and destination stations."""
+        return {"success": False, "error": "Not implemented for provider"}
 
     async def get_train_route(self, train_no: int, stops: bool = True, force_refresh: bool = False) -> Dict[str, Any]:
         """Fetch official train track route geometry & stations."""
         return {"success": False, "error": "Not implemented for provider"}
 
-    async def get_live_status(self, train_no: int) -> LiveTrainStatus:
+    async def search_stations(self, query: str, force_refresh: bool = False) -> Dict[str, Any]:
+        """Search stations by name, code or city matching query."""
+        return {"success": False, "error": "Not implemented for provider"}
+
+    async def get_live_status(self, train_no: int, journey_date: Optional[str] = None) -> LiveTrainStatus:
         """Convenience alias for get_live_train_status."""
-        return await self.get_live_train_status(train_no)
+        return await self.get_live_train_status(train_no, journey_date=journey_date)
 
 
 class RailRadarProvider(LiveTrainProvider):
@@ -177,6 +479,163 @@ class RailRadarProvider(LiveTrainProvider):
         if not raw_url.endswith("/v1"):
             raw_url = f"{raw_url}/v1"
         self.base_url = raw_url
+
+    async def get_train_info(self, train_no: int, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Fetch official train schedule, route, timetable, stations, and platforms from RailRadar:
+        GET https://api.railradar.in/v1/trains/{number}
+        Cached for 24 hours.
+        """
+        if not force_refresh:
+            cached = train_info_cache.get(train_no)
+            if cached is not None:
+                return cached
+
+        current_key = self.api_key
+        url = f"{self.base_url}/trains/{train_no}"
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "RailwayIntelligenceEngine/1.0",
+        }
+        if current_key:
+            headers["Authorization"] = f"Bearer {current_key}" if not current_key.startswith("Bearer ") else current_key
+            headers["x-api-key"] = current_key
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url, headers=headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    if isinstance(data, dict) and data.get("success"):
+                        train_info_cache.set(train_no, data)
+                    return data
+                else:
+                    logger.warning(f"RailRadar train info query for train {train_no} returned {response.status_code}: {response.text}")
+                    stale = train_info_cache.get(train_no, ignore_expiry=True)
+                    if stale is not None:
+                        return stale
+                    return {"success": False, "error": f"HTTP {response.status_code}", "detail": response.text}
+        except Exception as e:
+            logger.error(f"Failed to fetch static train info for train {train_no}: {e}")
+            stale = train_info_cache.get(train_no, ignore_expiry=True)
+            if stale is not None:
+                return stale
+            return {"success": False, "error": str(e)}
+
+    async def get_trains_between(
+        self,
+        from_station: str,
+        to_station: str,
+        journey_date: Optional[str] = None,
+        force_refresh: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Fetch all trains operating between source and destination stations from RailRadar:
+        GET https://api.railradar.in/v1/trains/between/{from}/{to}
+        """
+        clean_from = from_station.strip().upper()
+        clean_to = to_station.strip().upper()
+
+        if "(" in clean_from and ")" in clean_from:
+            clean_from = clean_from[clean_from.find("(") + 1 : clean_from.find(")")].strip()
+        if "(" in clean_to and ")" in clean_to:
+            clean_to = clean_to[clean_to.find("(") + 1 : clean_to.find(")")].strip()
+
+        if not clean_from or not clean_to:
+            return {"success": False, "error": "Source and Destination station codes are required."}
+
+        if not force_refresh:
+            cached = train_between_cache.get(clean_from, clean_to, date=journey_date)
+            if cached is not None:
+                return cached
+
+        current_key = self.api_key
+        url = f"{self.base_url}/trains/between/{clean_from}/{clean_to}"
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "RailwayIntelligenceEngine/1.0",
+        }
+        if current_key:
+            headers["Authorization"] = f"Bearer {current_key}" if not current_key.startswith("Bearer ") else current_key
+            headers["x-api-key"] = current_key
+
+        params: Dict[str, Any] = {}
+        if journey_date:
+            params["date"] = journey_date
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url, headers=headers, params=params)
+                if response.status_code == 200:
+                    json_body = response.json()
+                    if isinstance(json_body, dict) and json_body.get("success"):
+                        train_between_cache.set(clean_from, clean_to, json_body, date=journey_date)
+                    return json_body
+                elif response.status_code == 404:
+                    return {
+                        "success": True,
+                        "data": {
+                            "from": {"code": clean_from, "name": clean_from},
+                            "to": {"code": clean_to, "name": clean_to},
+                            "trains": [],
+                            "count": 0
+                        }
+                    }
+                else:
+                    logger.warning(f"RailRadar trains between {clean_from}-{clean_to} returned {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.error(f"Failed to fetch trains between {clean_from} and {clean_to}: {e}")
+            stale = train_between_cache.get(clean_from, clean_to, date=journey_date, ignore_expiry=True)
+            if stale is not None:
+                return stale
+            return {
+                "success": True,
+                "data": {
+                    "from": {"code": clean_from, "name": clean_from},
+                    "to": {"code": clean_to, "name": clean_to},
+                    "trains": [],
+                    "count": 0
+                },
+                "meta": {"source": "fallback_offline", "error": str(e)}
+            }
+    async def get_train_info(self, train_no: int, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Fetch official static train timetable, route stations, platforms, distance, and duration from RailRadar:
+        GET https://api.railradar.in/v1/trains/{number}
+        """
+        if not force_refresh:
+            cached = train_info_cache.get(train_no)
+            if cached is not None:
+                return cached
+
+        current_key = self.api_key
+        url = f"{self.base_url}/trains/{train_no}"
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "RailwayIntelligenceEngine/1.0",
+        }
+        if current_key:
+            headers["Authorization"] = f"Bearer {current_key}" if not current_key.startswith("Bearer ") else current_key
+            headers["x-api-key"] = current_key
+
+        try:
+            async with httpx.AsyncClient(timeout=12.0) as client:
+                response = await client.get(url, headers=headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    if isinstance(data, dict) and data.get("success"):
+                        train_info_cache.set(train_no, data)
+                    return data
+                else:
+                    stale = train_info_cache.get(train_no, ignore_expiry=True)
+                    if stale is not None:
+                        return stale
+                    return {"success": False, "error": f"HTTP {response.status_code}", "detail": response.text}
+        except Exception as e:
+            stale = train_info_cache.get(train_no, ignore_expiry=True)
+            if stale is not None:
+                return stale
+            return {"success": False, "error": str(e)}
 
     async def get_train_route(self, train_no: int, stops: bool = True, force_refresh: bool = False) -> Dict[str, Any]:
         """
@@ -229,6 +688,80 @@ class RailRadarProvider(LiveTrainProvider):
                 logger.info(f"[STALE CACHE FALLBACK] Serving stale route cache for #{train_no} after exception")
                 return stale
             return {"success": False, "error": str(e)}
+
+    async def search_stations(self, query: str, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Search stations by name, code or city from RailRadar:
+        GET https://api.railradar.in/v1/lookup/search/stations?q={query}
+        Cached for 24 hours.
+        """
+        clean_q = (query or "").strip()
+        if not clean_q:
+            return {"success": True, "data": FALLBACK_STATIONS_DATA[:20], "meta": {"source": "default"}}
+
+        # 1. Check cache first
+        if not force_refresh:
+            cached = station_search_cache.get(clean_q)
+            if cached is not None:
+                return cached
+
+        current_key = self.api_key
+        url = f"{self.base_url}/lookup/search/stations"
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "RailwayIntelligenceEngine/1.0",
+        }
+        if current_key:
+            headers["Authorization"] = f"Bearer {current_key}" if not current_key.startswith("Bearer ") else current_key
+            headers["x-api-key"] = current_key
+
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(url, headers=headers, params={"q": clean_q})
+                if response.status_code == 200:
+                    json_body = response.json()
+                    if isinstance(json_body, dict) and json_body.get("success"):
+                        station_search_cache.set(clean_q, json_body)
+                        return json_body
+                    return json_body
+                else:
+                    logger.warning(f"RailRadar station search for '{clean_q}' returned {response.status_code}: {response.text}")
+                    stale = station_search_cache.get(clean_q, ignore_expiry=True)
+                    if stale is not None:
+                        return stale
+
+                    # Fallback to rich local database filter on rate limit / server error
+                    q_lower = clean_q.lower()
+                    filtered = [
+                        s for s in FALLBACK_STATIONS_DATA
+                        if q_lower in s["code"].lower()
+                        or q_lower in s["name"].lower()
+                        or (s.get("city") and q_lower in s["city"].lower())
+                    ]
+                    return {
+                        "success": True,
+                        "data": filtered,
+                        "meta": {"source": "fallback_offline", "status": response.status_code}
+                    }
+        except Exception as e:
+            logger.error(f"Failed to search stations for '{clean_q}': {e}")
+            stale = station_search_cache.get(clean_q, ignore_expiry=True)
+            if stale is not None:
+                return stale
+
+            q_lower = clean_q.lower()
+            filtered = [
+                s for s in FALLBACK_STATIONS_DATA
+                if q_lower in s["code"].lower()
+                or q_lower in s["name"].lower()
+                or (s.get("city") and q_lower in s["city"].lower())
+            ]
+            return {
+                "success": True,
+                "data": filtered,
+                "meta": {"source": "fallback_exception", "error": str(e)}
+            }
+
 
     @property
     def api_key(self) -> Optional[str]:
@@ -640,10 +1173,33 @@ class MockLiveProvider(LiveTrainProvider):
                     }
                 ]
             }
-        },
+        }
     }
 
-    async def get_live_train_status(self, train_no: int) -> LiveTrainStatus:
+    async def get_train_info(self, train_no: int, force_refresh: bool = False) -> Dict[str, Any]:
+        profile = self.MOCK_TRAIN_PROFILES.get(train_no, {
+            "name": f"EXP TRAIN {train_no}",
+            "station": "NDLS",
+            "next": "GZB",
+        })
+        return {
+            "success": True,
+            "data": {
+                "train": {
+                    "number": str(train_no),
+                    "name": profile.get("name", f"Train #{train_no}"),
+                    "source": {"code": profile.get("station", "NDLS"), "name": profile.get("station", "NDLS")},
+                    "destination": {"code": profile.get("next", "GZB"), "name": profile.get("next", "GZB")},
+                    "runDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+                },
+                "route": [
+                    {"sequence": 1, "station": {"code": profile.get("station", "NDLS"), "name": profile.get("station", "NDLS")}, "isHalt": True, "departure": "06:00", "platform": "1"},
+                    {"sequence": 2, "station": {"code": profile.get("next", "GZB"), "name": profile.get("next", "GZB")}, "isHalt": True, "arrival": "06:45", "departure": "06:50", "platform": "2"},
+                ]
+            }
+        }
+
+    async def get_live_train_status(self, train_no: int, journey_date: Optional[str] = None) -> LiveTrainStatus:
         profile = self.MOCK_TRAIN_PROFILES.get(train_no, {
             "name": f"EXP TRAIN {train_no}",
             "station": "NDLS",
@@ -717,6 +1273,76 @@ class MockLiveProvider(LiveTrainProvider):
                 ]
             }
         }
+
+    async def get_trains_between(
+        self,
+        from_station: str,
+        to_station: str,
+        journey_date: Optional[str] = None,
+        force_refresh: bool = False
+    ) -> Dict[str, Any]:
+        clean_from = from_station.strip().upper()
+        clean_to = to_station.strip().upper()
+        if "(" in clean_from and ")" in clean_from:
+            clean_from = clean_from[clean_from.find("(") + 1 : clean_from.find(")")].strip()
+        if "(" in clean_to and ")" in clean_to:
+            clean_to = clean_to[clean_to.find("(") + 1 : clean_to.find(")")].strip()
+
+        mock_trains = [
+            {
+                "train": {
+                    "number": "12004",
+                    "name": "New Delhi - Lucknow Swarn Shatabdi Express",
+                    "type": "Shatabdi Express",
+                    "runDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+                },
+                "from": {"code": clean_from or "NDLS", "name": clean_from or "New Delhi", "city": "New Delhi", "departure": "06:10", "day": 1, "sequence": 1},
+                "to": {"code": clean_to or "LJN", "name": clean_to or "Lucknow Jn", "city": "Lucknow", "arrival": "13:00", "day": 1, "sequence": 6},
+                "distance": 511,
+                "duration": 410,
+                "totalHaltsBetween": 6,
+            },
+            {
+                "train": {
+                    "number": "12274",
+                    "name": "New Delhi - Howrah Duronto Express",
+                    "type": "Duronto Express",
+                    "runDays": ["tue", "sat"],
+                },
+                "from": {"code": clean_from or "NDLS", "name": clean_from or "New Delhi", "city": "New Delhi", "departure": "12:35", "day": 1, "sequence": 1},
+                "to": {"code": clean_to or "HWH", "name": clean_to or "Howrah", "city": "Kolkata", "arrival": "10:35", "day": 2, "sequence": 8},
+                "distance": 1503,
+                "duration": 1320,
+                "totalHaltsBetween": 5,
+            }
+        ]
+        return {
+            "success": True,
+            "data": {
+                "from": {"code": clean_from, "name": clean_from},
+                "to": {"code": clean_to, "name": clean_to},
+                "trains": mock_trains,
+                "count": len(mock_trains),
+            }
+        }
+
+    async def search_stations(self, query: str, force_refresh: bool = False) -> Dict[str, Any]:
+        """Mock station search querying fallback dataset."""
+        clean_q = (query or "").strip().lower()
+        if not clean_q:
+            return {"success": True, "data": FALLBACK_STATIONS_DATA[:20], "meta": {"source": "mock"}}
+        filtered = [
+            s for s in FALLBACK_STATIONS_DATA
+            if clean_q in s["code"].lower()
+            or clean_q in s["name"].lower()
+            or (s.get("city") and clean_q in s["city"].lower())
+        ]
+        return {
+            "success": True,
+            "data": filtered,
+            "meta": {"source": "mock", "count": len(filtered)}
+        }
+
 
 
 def get_live_provider(provider_type: Optional[str] = None) -> LiveTrainProvider:
