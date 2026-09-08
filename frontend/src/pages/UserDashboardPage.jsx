@@ -227,7 +227,8 @@ export function UserDashboardPage() {
     navigate(
       `/user-dashboard?from=${encodeURIComponent(cleanStationCode(fromStation))}&to=${encodeURIComponent(
         cleanStationCode(toStation)
-      )}&date=${journeyDate}`
+      )}&date=${journeyDate}`,
+      { replace: true }
     );
   };
 
@@ -241,7 +242,8 @@ export function UserDashboardPage() {
     navigate(
       `/user-dashboard?from=${encodeURIComponent(cleanStationCode(prevTo))}&to=${encodeURIComponent(
         cleanStationCode(prevFrom)
-      )}&date=${journeyDate}`
+      )}&date=${journeyDate}`,
+      { replace: true }
     );
   };
 
@@ -253,7 +255,8 @@ export function UserDashboardPage() {
     navigate(
       `/user-dashboard?tab=live-status&train=${encodeURIComponent(trainNo)}&date=${journeyDate}&from=${encodeURIComponent(
         cleanStationCode(fromStation)
-      )}&to=${encodeURIComponent(cleanStationCode(toStation))}`
+      )}&to=${encodeURIComponent(cleanStationCode(toStation))}`,
+      { replace: true }
     );
   }, [journeyDate, fromStation, toStation, navigate]);
 
@@ -262,7 +265,8 @@ export function UserDashboardPage() {
     navigate(
       `/user-dashboard?tab=find-trains&from=${encodeURIComponent(
         cleanStationCode(fromStation)
-      )}&to=${encodeURIComponent(cleanStationCode(toStation))}&date=${journeyDate}`
+      )}&to=${encodeURIComponent(cleanStationCode(toStation))}&date=${journeyDate}`,
+      { replace: true }
     );
   };
 

@@ -7,8 +7,12 @@ export function UserLayout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (err) {
+      console.warn('Logout error:', err);
+    }
     navigate('/login', { replace: true });
   };
 

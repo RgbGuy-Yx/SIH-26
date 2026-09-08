@@ -20,7 +20,11 @@ export function DashboardLayout() {
   } = useSimulation();
 
   const handleLogout = async () => {
-    await logout();
+    try {
+      await logout();
+    } catch (err) {
+      console.warn('Logout error:', err);
+    }
     navigate('/login', { replace: true });
   };
 

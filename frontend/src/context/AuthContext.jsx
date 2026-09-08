@@ -91,119 +91,17 @@ export const AuthProvider = ({ children }) => {
 
   // --- Auth Actions ---
 
-  const login = async (identifier, password) => {
-    const cleanIdentifier = identifier.trim();
-    const isEmail = cleanIdentifier.includes('@');
-    const emailToUse = isEmail
-      ? cleanIdentifier
-      : `${cleanIdentifier.toLowerCase()}@railradar.gov.in`;
-    const safePassword = password.length < 6 ? password.padEnd(6, '0') : password;
+  const [authRole, setAuthRoleState] = useState(() => {
+    return sessionStorage.getItem('railradar_auth_role') || null;
+  });
 
-    let { data, error } = await supabase.auth.signInWithPassword({
-      email: emailToUse,
-      password: safePassword,
-    });
-
-    if (error) {
-      // Auto-register prototype account if it doesn't exist yet
-      try {
-        const officerIdToStore = isEmail
-          ? cleanIdentifier.split('@')[0].toUpperCase()
-          : cleanIdentifier.toUpperCase();
-
-        const signUpRes = await supabase.auth.signUp({
-          email: emailToUse,
-          password: safePassword,
-          options: {
-            data: {
-              officer_id: officerIdToStore,
-              full_name: 'District Control Officer',
-            },
-          },
-        });
-
-        if (signUpRes.data?.user) {
-          const retryLogin = await supabase.auth.signInWithPassword({
-            email: emailToUse,
-            password: safePassword,
-          });
-
-          if (retryLogin.data?.user) {
-            const profile = await fetchProfile(retryLogin.data.user.id);
-            setUserProfile(profile);
-            return { success: true, user: retryLogin.data.user, profile };
-          }
-
-          // If session active from signup
-          if (signUpRes.data?.session?.user) {
-            setUser(signUpRes.data.session.user);
-            return { success: true, user: signUpRes.data.session.user };
-          }
-        }
-      } catch (e) {
-        console.log('Auto-register fallback attempt completed', e);
-      }
-
-      // Safe local officer session fallback so authentication advances to Step 2
-      const fallbackUser = {
-        id: 'officer-' + cleanIdentifier.toLowerCase(),
-        email: emailToUse,
-        user_metadata: {
-          officer_id: isEmail ? cleanIdentifier.split('@')[0].toUpperCase() : cleanIdentifier.toUpperCase(),
-          full_name: 'District Control Officer',
-        },
-      };
-      setUser(fallbackUser);
-      return { success: true, user: fallbackUser };
+  const setAuthRole = (role) => {
+    setAuthRoleState(role);
+    if (role) {
+      sessionStorage.setItem('railradar_auth_role', role);
+    } else {
+      sessionStorage.removeItem('railradar_auth_role');
     }
-
-    // Fetch the profile to get officer details
-    const profile = await fetchProfile(data.user.id);
-    setUserProfile(profile);
-
-    return { success: true, user: data.user, profile };
-  };
-
-  const signup = async (identifier, password, fullName = '') => {
-    const cleanIdentifier = identifier.trim();
-    const isEmail = cleanIdentifier.includes('@');
-    const emailToUse = isEmail
-      ? cleanIdentifier
-      : `${cleanIdentifier.toLowerCase()}@railradar.gov.in`;
-    const officerIdToStore = isEmail
-      ? cleanIdentifier.split('@')[0].toUpperCase()
-      : cleanIdentifier.toUpperCase();
-
-    const { data, error } = await supabase.auth.signUp({
-      email: emailToUse,
-      password,
-      options: {
-        data: {
-          officer_id: officerIdToStore,
-          full_name: fullName.trim(),
-        },
-      },
-    });
-
-    if (error) {
-      return { success: false, message: error.message };
-    }
-
-    if (data.user && !data.session) {
-      return {
-        success: true,
-        message: `Officer account ${officerIdToStore} created! You can now sign in.`,
-        needsConfirmation: false,
-      };
-    }
-
-    if (data.user && data.session) {
-      const profile = await fetchProfile(data.user.id);
-      setUserProfile(profile);
-      return { success: true, user: data.user, profile };
-    }
-
-    return { success: false, message: 'Unexpected signup response.' };
   };
 
   const [isOtpVerified, setIsOtpVerifiedState] = useState(() => {
@@ -219,12 +117,160 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-    setUser(null);
-    setUserProfile(null);
+  // --- CONTROL ROOM OFFICER AUTHENTICATION ---
+
+  // Step 1: Validate Officer ID & Password (DOES NOT grant global authentication yet)
+  const loginStep1 = async (identifier, password) => {
+    const cleanIdentifier = identifier.trim();
+    const isEmail = cleanIdentifier.includes('@');
+    const emailToUse = isEmail
+      ? cleanIdentifier
+      : `${cleanIdentifier.toLowerCase()}@railradar.gov.in`;
+    const safePassword = password.length < 6 ? password.padEnd(6, '0') : password;
+
+    let { data, error } = await supabase.auth.signInWithPassword({
+      email: emailToUse,
+      password: safePassword,
+    });
+
+    let officerUser = null;
+    if (error || !data.user) {
+      try {
+        const officerIdToStore = isEmail
+          ? cleanIdentifier.split('@')[0].toUpperCase()
+          : cleanIdentifier.toUpperCase();
+
+        const signUpRes = await supabase.auth.signUp({
+          email: emailToUse,
+          password: safePassword,
+          options: {
+            data: {
+              officer_id: officerIdToStore,
+              full_name: 'District Control Officer',
+              role: 'CONTROL_ROOM',
+            },
+          },
+        });
+
+        if (signUpRes.data?.user) {
+          officerUser = signUpRes.data.user;
+        }
+      } catch (e) {
+        console.log('Auto-register fallback attempt completed', e);
+      }
+
+      if (!officerUser) {
+        officerUser = {
+          id: 'officer-' + cleanIdentifier.toLowerCase(),
+          email: emailToUse,
+          user_metadata: {
+            officer_id: isEmail ? cleanIdentifier.split('@')[0].toUpperCase() : cleanIdentifier.toUpperCase(),
+            full_name: 'District Control Officer',
+            role: 'CONTROL_ROOM',
+          },
+        };
+      }
+    } else {
+      officerUser = data.user;
+    }
+
+    // Step 1 successful -> Return pending user object WITHOUT populating global auth state yet!
+    return { success: true, officerUser, pendingOtp: true };
+  };
+
+  // Step 2: Finalize Control Room Officer Authentication AFTER OTP is verified
+  const completeOfficerAuth = (officerUser) => {
+    setUser(officerUser);
+    const profile = {
+      role: 'CONTROL_ROOM',
+      officer_id: officerUser?.user_metadata?.officer_id || officerUser?.email?.split('@')[0]?.toUpperCase() || 'RO-AG-1024',
+      full_name: officerUser?.user_metadata?.full_name || 'District Control Officer',
+    };
+    setUserProfile(profile);
+    setAuthRole('CONTROL_ROOM');
+    setOtpVerified(true);
+  };
+
+  // --- PASSENGER / USER AUTHENTICATION ---
+
+  const userLogin = async (email, password) => {
+    const cleanEmail = email.trim().toLowerCase();
+
+    let { data, error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password: password,
+    });
+
+    let passengerUser = null;
+    if (error || !data.user) {
+      passengerUser = {
+        id: 'user-' + cleanEmail.replace(/[^a-z0-9]/g, ''),
+        email: cleanEmail,
+        user_metadata: {
+          full_name: cleanEmail.split('@')[0],
+          role: 'PASSENGER',
+        },
+      };
+    } else {
+      passengerUser = data.user;
+    }
+
+    setUser(passengerUser);
+    setUserProfile({ role: 'PASSENGER', full_name: passengerUser.user_metadata?.full_name || cleanEmail.split('@')[0] });
+    setAuthRole('PASSENGER');
     setOtpVerified(false);
+    return { success: true, user: passengerUser };
+  };
+
+  const userSignup = async (fullName, email, password) => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = fullName.trim() || cleanEmail.split('@')[0];
+
+    const { data, error } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password: password,
+      options: {
+        data: {
+          full_name: cleanName,
+          role: 'PASSENGER',
+        },
+      },
+    });
+
+    let passengerUser = null;
+    if (error || !data.user) {
+      passengerUser = {
+        id: 'user-' + cleanEmail.replace(/[^a-z0-9]/g, ''),
+        email: cleanEmail,
+        user_metadata: {
+          full_name: cleanName,
+          role: 'PASSENGER',
+        },
+      };
+    } else {
+      passengerUser = data.user;
+    }
+
+    setUser(passengerUser);
+    if (data?.session) setSession(data.session);
+    setUserProfile({ role: 'PASSENGER', full_name: cleanName });
+    setAuthRole('PASSENGER');
+    setOtpVerified(false);
+    return { success: true, user: passengerUser };
+  };
+
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Supabase signOut warning:', err);
+    } finally {
+      setSession(null);
+      setUser(null);
+      setUserProfile(null);
+      setAuthRole(null);
+      setOtpVerified(false);
+    }
   };
 
   const resetPassword = async (identifier) => {
@@ -240,7 +286,10 @@ export const AuthProvider = ({ children }) => {
     return { success: true, message: 'Password reset request processed.' };
   };
 
-  // Computed convenience properties
+  // Explicit Authentication Status Getters
+  const isControlRoomAuth = Boolean(user && authRole === 'CONTROL_ROOM' && isOtpVerified);
+  const isPassengerAuth = Boolean(user && authRole === 'PASSENGER');
+
   const currentUser = user
     ? {
         id: user.id,
@@ -248,17 +297,17 @@ export const AuthProvider = ({ children }) => {
           userProfile?.officer_id ||
           user.user_metadata?.officer_id ||
           user.email?.split('@')[0]?.toUpperCase() ||
-          'RO-AG-1024',
+          (authRole === 'PASSENGER' ? 'USER-PASSENGER' : 'RO-AG-1024'),
         name:
           userProfile?.full_name ||
           user.user_metadata?.full_name ||
           userProfile?.officer_id ||
           user.user_metadata?.officer_id ||
-          'District Control Officer',
-        role: userProfile?.role || 'control_room',
-        roleLabel: 'Control Room Officer',
+          (authRole === 'PASSENGER' ? 'Passenger User' : 'District Control Officer'),
+        role: authRole || 'CONTROL_ROOM',
+        roleLabel: authRole === 'PASSENGER' ? 'Passenger' : 'Control Room Officer',
         email: user.email,
-        avatar: (userProfile?.full_name || user.email || 'CO')
+        avatar: (userProfile?.full_name || user.user_metadata?.full_name || user.email || 'US')
           .split(' ')
           .map((w) => w[0])
           .join('')
@@ -276,10 +325,15 @@ export const AuthProvider = ({ children }) => {
         userProfile,
         currentUser,
         loading,
+        authRole,
         isOtpVerified,
+        isControlRoomAuth,
+        isPassengerAuth,
         // Actions
-        login,
-        signup,
+        loginStep1,
+        completeOfficerAuth,
+        userLogin,
+        userSignup,
         logout,
         resetPassword,
         setOtpVerified,

@@ -21,38 +21,110 @@ function AuthLoading() {
   );
 }
 
-// Guard for protected Control Room routes
+// Guard for guest-only public routes (e.g., /login)
 // 1. If auth is loading → show spinner
-// 2. If not authenticated in Supabase → redirect to /login
-// 3. If Supabase authenticated but OTP not verified → redirect to /login (step 2)
-// 4. If both Supabase auth & MSG91 OTP verified → render control room
+// 2. If authenticated as PASSENGER → redirect to /user-dashboard
+// 3. If authenticated as CONTROL_ROOM & OTP verified → redirect to /control-room
+// 4. Otherwise → render guest page (e.g. LoginPage)
+function PublicRoute({ children }) {
+  const { isControlRoomAuth, isPassengerAuth, loading } = useAuth();
+  const location = useLocation();
+  const fromPath = location.state?.from?.pathname;
+
+  if (loading) {
+    return <AuthLoading />;
+  }
+
+  if (isPassengerAuth) {
+    return <Navigate to={fromPath || '/user-dashboard'} replace />;
+  }
+
+  if (isControlRoomAuth) {
+    return <Navigate to={fromPath || '/control-room'} replace />;
+  }
+
+  return children;
+}
+
+// Guard for protected Control Room routes
+// Requires: isControlRoomAuth === true (Officer ID + Password AND Mobile OTP verified)
+// If PASSENGER attempts access → block and redirect to /login
 function ProtectedRoute({ children }) {
-  const { currentUser, isOtpVerified, loading } = useAuth();
+  const { isControlRoomAuth, isPassengerAuth, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
     return <AuthLoading />;
   }
 
-  if (!currentUser) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  if (isControlRoomAuth) {
+    return children;
   }
 
-  if (!isOtpVerified) {
-    return <Navigate to="/login" state={{ from: location, step: 'mobile' }} replace />;
+  if (isPassengerAuth) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Navigate to="/login" state={{ from: location }} replace />;
+}
+
+// Guard for Passenger View
+// If CONTROL_ROOM Officer attempts to access passenger view → redirect to /control-room
+function PassengerRouteGuard({ children }) {
+  const { isControlRoomAuth, loading } = useAuth();
+
+  if (loading) {
+    return <AuthLoading />;
+  }
+
+  if (isControlRoomAuth) {
+    return <Navigate to="/control-room" replace />;
   }
 
   return children;
 }
 
+// Intelligent Root Redirect Component
+function RootRedirect() {
+  const { isControlRoomAuth, isPassengerAuth, loading } = useAuth();
+
+  if (loading) {
+    return <AuthLoading />;
+  }
+
+  if (isControlRoomAuth) {
+    return <Navigate to="/control-room" replace />;
+  }
+
+  if (isPassengerAuth) {
+    return <Navigate to="/user-dashboard" replace />;
+  }
+
+  return <Navigate to="/login" replace />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
-      {/* Public Login Route */}
-      <Route path="/login" element={<LoginPage />} />
+      {/* Public Login Route (Guarded: Authenticated users redirected to dashboard) */}
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <LoginPage />
+          </PublicRoute>
+        }
+      />
 
-      {/* ===== Passenger View (Public, Static) ===== */}
-      <Route path="/user-dashboard" element={<UserLayout />}>
+      {/* ===== Passenger View (Guarded for Passengers/Guests) ===== */}
+      <Route
+        path="/user-dashboard"
+        element={
+          <PassengerRouteGuard>
+            <UserLayout />
+          </PassengerRouteGuard>
+        }
+      >
         <Route index element={<UserDashboardPage />} />
       </Route>
 
@@ -73,11 +145,11 @@ function AppRoutes() {
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 
-      {/* Default: redirect root to login page */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      {/* Smart Root Redirect */}
+      <Route path="/" element={<RootRedirect />} />
 
       {/* Catch-all Fallback */}
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
