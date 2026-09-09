@@ -71,3 +71,6 @@ Thumbs.db
 # Antigravity / Agent logs & scratch
 .system_generated/
 scratch/
+image*.png
+*.glb
+!frontend/public/models/*.glb

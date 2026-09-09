@@ -16,7 +16,11 @@ export function LoginPage() {
   const location = useLocation();
 
   // Mode Selection: 'control_room' (Default) | 'user' (Passenger)
-  const [authMode, setAuthMode] = useState('control_room');
+  const searchParams = new URLSearchParams(location.search);
+  const initialMode =
+    location.state?.mode ||
+    (searchParams.get('role') === 'passenger' || searchParams.get('mode') === 'user' ? 'user' : 'control_room');
+  const [authMode, setAuthMode] = useState(initialMode);
 
   // User Sub-mode: 'login' | 'signup'
   const [userSubMode, setUserSubMode] = useState('login');

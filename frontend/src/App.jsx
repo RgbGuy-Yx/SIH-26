@@ -10,6 +10,7 @@ import AlertsConflictsPage from './pages/AlertsConflictsPage';
 import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
 import { UserDashboardPage } from './pages/UserDashboardPage';
+import RailSenseLandingPage from './pages/RailSenseLandingPage';
 
 // Full-screen loading spinner shown while Supabase session is being resolved
 function AuthLoading() {
@@ -145,8 +146,9 @@ function AppRoutes() {
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 
-      {/* Smart Root Redirect */}
-      <Route path="/" element={<RootRedirect />} />
+      {/* 3D RailSense Landing Experience */}
+      <Route path="/" element={<RailSenseLandingPage />} />
+      <Route path="/landing" element={<RailSenseLandingPage />} />
 
       {/* Catch-all Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
