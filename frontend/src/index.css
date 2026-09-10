@@ -73,3 +73,34 @@ body {
   transform-origin: center center;
 }
 
+/* 4. MapLibre canvas border / outline resets */
+.maplibregl-canvas,
+.maplibregl-canvas-container,
+.maplibregl-map {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* 5. Custom MapLibre Live Telemetry Popup Overrides */
+.maplibregl-popup.live-telemetry-map-popup {
+  z-index: 60 !important;
+}
+
+.maplibregl-popup.live-telemetry-map-popup .maplibregl-popup-content {
+  background: transparent !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  border: none !important;
+}
+
+.maplibregl-popup.live-telemetry-map-popup .maplibregl-popup-tip {
+  border-top-color: #0f172a !important; /* matches slate-900 */
+  border-bottom-color: #0f172a !important;
+}
+
+.maplibregl-popup.live-telemetry-map-popup .maplibregl-popup-close-button {
+  display: none !important;
+}
+

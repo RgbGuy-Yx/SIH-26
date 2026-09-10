@@ -50,6 +50,12 @@ class Settings(BaseModel):
     )
 
     # Secondary APIs & Weather
+    OPENWEATHER_API_KEY: Optional[str] = Field(
+        default_factory=lambda: os.environ.get("OPENWEATHER_API_KEY", None)
+    )
+    OPENWEATHER_BASE_URL: str = Field(
+        default_factory=lambda: os.environ.get("OPENWEATHER_BASE_URL", "https://api.openweathermap.org/data/2.5/weather")
+    )
     OPEN_METEO_BASE_URL: str = Field(
         default_factory=lambda: os.environ.get("OPEN_METEO_BASE_URL", "https://archive-api.open-meteo.com/v1/archive")
     )

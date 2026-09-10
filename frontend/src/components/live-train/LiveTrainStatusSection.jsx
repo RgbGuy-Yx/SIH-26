@@ -4,6 +4,8 @@ import {
   formatDateHeader,
   formatDuration,
   extractTimeDisplay,
+  formatTimeWithAmPm,
+  calculateExpectedTime,
 } from '../../utils/dateTimeUtils';
 
 const DAYS_OF_WEEK = [
@@ -41,6 +43,7 @@ export function LiveTrainStatusSection({
   const [isSaved, setIsSaved] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
   const [selectedCoach, setSelectedCoach] = useState(null);
+  const [selectedDropCode, setSelectedDropCode] = useState('');
   const [isGliding, setIsGliding] = useState(false);
   const scrollAnimRef = useRef(null);
 
@@ -208,20 +211,29 @@ export function LiveTrainStatusSection({
       const actDep = extractTimeDisplay(st.actualDeparture || st.actDeparture || (st.status === 'departed' ? st.departure : null));
 
       const delayVal = st.delayDeparture !== undefined ? st.delayDeparture : st.delayArrival !== undefined ? st.delayArrival : st.delayMinutes;
-      let delayBadge = 'On time';
-      if (delayVal !== undefined && delayVal !== null) {
-        const dNum = Number(delayVal);
-        if (dNum === 0) delayBadge = 'On time';
-        else if (dNum > 0) delayBadge = `+${Math.round(dNum)} min`;
-        else delayBadge = `${Math.abs(Math.round(dNum))} min early`;
-      }
+      const rawDelay = delayVal !== undefined && delayVal !== null ? Number(delayVal) : delayMinutes;
+      const stopDelayMinutes = isNaN(rawDelay) ? 0 : rawDelay;
 
-      const pf = st.platform ? String(st.platform).trim() : '-';
-      const dist = st.distance !== undefined ? `${st.distance} km` : '--';
+      // Expected live arrival & departure
+      const expArr = schedArr && schedArr !== '-' ? calculateExpectedTime(schedArr, stopDelayMinutes) : '-';
+      const expDep = schedDep && schedDep !== '-' ? calculateExpectedTime(schedDep, stopDelayMinutes) : '-';
 
       const isStart = idx === 0;
       const isCurrent = st.status === 'arrived' || st.status === 'approaching' || (activeStationCode && code.toUpperCase() === activeStationCode.toUpperCase());
       const isPassed = st.status === 'departed' || (activeIndex >= 0 && idx < activeIndex);
+
+      const resolvedActArr = actArr && actArr !== '-' ? actArr : (isPassed || isCurrent ? expArr : '-');
+      const resolvedActDep = actDep && actDep !== '-' ? actDep : (isPassed ? expDep : '-');
+
+      let delayBadge = 'On time';
+      if (stopDelayMinutes > 0) {
+        delayBadge = `+${Math.round(stopDelayMinutes)} min`;
+      } else if (stopDelayMinutes < 0) {
+        delayBadge = `${Math.abs(Math.round(stopDelayMinutes))} min early`;
+      }
+
+      const pf = st.platform ? String(st.platform).trim() : '-';
+      const dist = st.distance !== undefined ? `${st.distance} km` : '--';
 
       return {
         seq: st.sequence || idx + 1,
@@ -233,7 +245,12 @@ export function LiveTrainStatusSection({
         schedDep: schedDep || '-',
         actArr: actArr || '-',
         actDep: actDep || '-',
+        expArr,
+        expDep,
+        resolvedActArr,
+        resolvedActDep,
         delay: delayBadge,
+        delayMinutes: stopDelayMinutes,
         pf: pf !== '-' ? (pf.startsWith('PF') ? pf : `PF ${pf}`) : '-',
         distance: dist,
         isStart,
@@ -405,6 +422,15 @@ export function LiveTrainStatusSection({
     };
   }, [coreParsedData, upcomingHalts, lastRefreshedTime, journeyDate, todayIso]);
 
+  // Default to final destination code if not selected or if train changes
+  const effectiveDropCode = useMemo(() => {
+    const stops = parsedData.stops || [];
+    if (selectedDropCode && stops.some((s) => s.code.toUpperCase() === selectedDropCode.toUpperCase())) {
+      return selectedDropCode;
+    }
+    return parsedData.destination?.code || (stops.length > 0 ? stops[stops.length - 1].code : '');
+  }, [selectedDropCode, parsedData.stops, parsedData.destination]);
+
   // Displayed stops (All Checkpoints vs Commercial Halts Only)
   const visibleStops = useMemo(() => {
     if (!showAllCheckpoints) {
@@ -412,6 +438,85 @@ export function LiveTrainStatusSection({
     }
     return parsedData.stops;
   }, [parsedData.stops, showAllCheckpoints]);
+
+  // ML Expected Arrival Projection for Selected Drop Station (XGBoost ETA Pipeline Output)
+  const expectedArrivalData = useMemo(() => {
+    const stops = parsedData.stops || [];
+    const dropStop = stops.find((s) => s.code.toUpperCase() === effectiveDropCode.toUpperCase()) || stops[stops.length - 1] || {};
+
+    const currentDelayNum = parsedData.delayMinutes || 0;
+
+    // Calculate projected delay for the specific drop location based on route progress
+    const activeIdx = parsedData.activeSeqIndex >= 0 ? parsedData.activeSeqIndex : 0;
+    const dropIdx = stops.findIndex((s) => s.code.toUpperCase() === effectiveDropCode.toUpperCase());
+    const targetIdx = dropIdx >= 0 ? dropIdx : stops.length - 1;
+
+    let expectedDelayNum = 0;
+    if (dropStop.isPassed) {
+      // If the train has already departed/passed this station, show recorded delay
+      const pastDelay = dropStop.delay ? parseInt(dropStop.delay, 10) : currentDelayNum;
+      expectedDelayNum = isNaN(pastDelay) ? currentDelayNum : pastDelay;
+    } else {
+      // Projected delay along remaining hops to the drop station
+      const remainingHopsToDrop = Math.max(0, targetIdx - activeIdx);
+      const totalRemainingHops = Math.max(1, (stops.length - 1) - activeIdx);
+      const hopRatio = Math.min(1, remainingHopsToDrop / totalRemainingHops);
+
+      const maxProjectedDelay =
+        parsedData.liveRootRaw?.live_ml_result?.total_predicted_delay_minutes ??
+        parsedData.liveRootRaw?.ml_predicted_delay ??
+        (currentDelayNum > 0
+          ? Math.round(currentDelayNum * 1.5 + (currentDelayNum <= 4 ? 4 : 2))
+          : currentDelayNum < 0
+            ? currentDelayNum
+            : 0);
+
+      expectedDelayNum = currentDelayNum > 0
+        ? Math.round(currentDelayNum + (Number(maxProjectedDelay) - currentDelayNum) * hopRatio)
+        : (currentDelayNum < 0 ? currentDelayNum : 0);
+    }
+
+    const currentDelayText =
+      currentDelayNum === 0
+        ? 'On time'
+        : currentDelayNum > 0
+          ? `+${Math.round(currentDelayNum)} min`
+          : `${Math.abs(Math.round(currentDelayNum))} min early`;
+
+    const expectedDelayText =
+      expectedDelayNum === 0
+        ? 'On time'
+        : expectedDelayNum > 0
+          ? `+${Math.round(expectedDelayNum)} min`
+          : `${Math.abs(Math.round(expectedDelayNum))} min early`;
+
+    // Drop scheduled time
+    const schedArrRaw = dropStop.schedArr !== '-' ? dropStop.schedArr : (dropStop.schedDep !== '-' ? dropStop.schedDep : parsedData.destination?.time);
+    const formattedScheduled = formatTimeWithAmPm(schedArrRaw || '09:55 AM');
+    const expectedTime = calculateExpectedTime(schedArrRaw || '09:55 AM', expectedDelayNum);
+
+    // Stops remaining and distance remaining to drop location
+    const stopsUntilDrop = Math.max(0, targetIdx - activeIdx);
+    const isFinalDestination = targetIdx === stops.length - 1;
+
+    return {
+      dropStop,
+      stationName: dropStop.name || dropStop.code || parsedData.destination?.name || 'Destination',
+      stationCode: dropStop.code || parsedData.destination?.code || '',
+      formattedScheduled,
+      currentDelayText,
+      currentDelayNum,
+      expectedDelayText,
+      expectedDelayNum,
+      expectedTime,
+      stopsUntilDrop,
+      isFinalDestination,
+      isPassed: dropStop.isPassed,
+      isCurrent: dropStop.isCurrent,
+      platform: dropStop.pf !== '-' ? dropStop.pf : (parsedData.destination?.platform || '-'),
+      distance: dropStop.distance || '--',
+    };
+  }, [parsedData, effectiveDropCode]);
 
   // Auto-scroll on initial load, refresh, or route subtab activation
   useEffect(() => {
@@ -515,46 +620,45 @@ export function LiveTrainStatusSection({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. TRAIN IDENTITY HERO CARD (OCC Daylight White Elevation)                */}
+      {/* 2. FULL-WIDTH HERO TRAIN COCKPIT: IDENTITY & ROUTE OVERVIEW                */}
       {/* ========================================================================= */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6 space-y-6">
-        {/* Top Identification Row */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-          <div className="flex items-start sm:items-center gap-3.5">
-            {/* Train Icon Box */}
-            <div className="w-11 h-11 rounded-xl bg-sky-50 border border-sky-200/80 flex items-center justify-center text-[#0284C7] shrink-0 shadow-2xs">
-              <span className="material-symbols-outlined text-[24px]">directions_railway</span>
+      <div className="w-full bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 sm:p-6 space-y-4">
+        {/* Identification & Live Status Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-50 to-blue-50 border border-sky-200/80 flex items-center justify-center text-[#0284C7] shrink-0 shadow-2xs">
+              <span className="material-symbols-outlined text-[26px]">directions_railway</span>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
                 <span className="font-mono text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
                   {parsedData.number}
                 </span>
-                <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+                <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
                   {parsedData.name}
                 </h1>
               </div>
 
               {/* Badges & Runs on */}
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono font-bold text-[11px]">
+                <span className="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono font-bold text-[11px]">
                   {parsedData.type}
                 </span>
-                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-sans font-medium text-[11px]">
+                <span className="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-sans font-medium text-[11px]">
                   {parsedData.zone}
                 </span>
                 <span className="text-slate-300">•</span>
-                <span className="text-[11px] text-slate-400 font-medium">Runs on:</span>
+                <span className="text-[11px] text-slate-400 font-medium">Runs:</span>
                 <div className="flex items-center gap-1">
                   {DAYS_OF_WEEK.map((d) => {
                     const isRunning = parsedData.runDays.includes(d.key);
                     return (
                       <span
                         key={d.key}
-                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded transition-colors ${isRunning
+                        className={`text-[10px] font-mono px-1.5 py-0.2 rounded transition-colors ${isRunning
                           ? 'bg-sky-50 text-[#0284C7] border border-sky-200 font-bold'
-                          : 'bg-transparent text-slate-300'
+                          : 'text-slate-300'
                           }`}
                       >
                         {d.label}
@@ -567,7 +671,7 @@ export function LiveTrainStatusSection({
           </div>
 
           {/* Right Live Status Beacon */}
-          <div className="flex flex-col items-start lg:items-end gap-1 shrink-0">
+          <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1.5 shrink-0 pt-1 sm:pt-0">
             <div
               className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono font-bold border ${parsedData.delayMinutes > 0
                 ? 'bg-amber-50 border-amber-200 text-amber-700'
@@ -581,90 +685,72 @@ export function LiveTrainStatusSection({
               <span>{parsedData.status}</span>
             </div>
             <span className="text-[11px] font-mono text-slate-400">
-              Last updated: {parsedData.lastUpdated}
+              Updated: {parsedData.lastUpdated}
             </span>
           </div>
         </div>
 
-        {/* ========================================================================= */}
-        {/* 3. 6-TILE KEY METRICS STRIP                                               */}
-        {/* ========================================================================= */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-center">
-          {/* Tile 1: From */}
-          <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 flex flex-col justify-between h-full">
-            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider">From</span>
+        {/* Quick Metrics Grid (Full 4-Column Layout) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+          {/* Tile 1: Origin */}
+          <div className="p-3.5 rounded-xl bg-slate-50/90 border border-slate-200/80">
+            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">From</span>
             <div className="mt-1">
-              <span className="font-mono text-base font-black text-slate-900 block leading-none">
+              <span className="font-mono text-base font-black text-slate-900 block leading-tight">
                 {parsedData.origin.code}
               </span>
-              <span className="text-[11px] text-slate-500 block truncate mt-0.5">
+              <span className="text-xs text-slate-500 block truncate mt-0.5" title={parsedData.origin.name}>
                 {parsedData.origin.name}
               </span>
             </div>
             <div className="text-xs font-mono font-bold text-slate-800 mt-2">
               {parsedData.origin.time}{' '}
-              <span className="text-[10px] font-normal text-slate-400">({parsedData.origin.platform})</span>
+              <span className="text-[11px] font-normal text-slate-400">({parsedData.origin.platform})</span>
             </div>
           </div>
 
-          {/* Tile 2: To */}
-          <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 flex flex-col justify-between h-full">
-            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider">To</span>
+          {/* Tile 2: Destination */}
+          <div className="p-3.5 rounded-xl bg-slate-50/90 border border-slate-200/80">
+            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">To</span>
             <div className="mt-1">
-              <span className="font-mono text-base font-black text-[#0284C7] block leading-none">
+              <span className="font-mono text-base font-black text-[#0284C7] block leading-tight">
                 {parsedData.destination.code}
               </span>
-              <span className="text-[11px] text-slate-500 block truncate mt-0.5">
+              <span className="text-xs text-slate-500 block truncate mt-0.5" title={parsedData.destination.name}>
                 {parsedData.destination.name}
               </span>
             </div>
             <div className="text-xs font-mono font-bold text-slate-800 mt-2">
               {parsedData.destination.time}{' '}
-              <span className="text-[10px] font-normal text-slate-400">({parsedData.destination.platform})</span>
+              <span className="text-[11px] font-normal text-slate-400">({parsedData.destination.platform})</span>
             </div>
           </div>
 
-          {/* Tile 3: Duration */}
-          <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 flex flex-col justify-between h-full">
+          {/* Tile 3: Journey Duration & Distance */}
+          <div className="p-3.5 rounded-xl bg-slate-50/90 border border-slate-200/80">
             <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <span className="material-symbols-outlined text-[13px] text-slate-400">schedule</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400">schedule</span>
               <span>Duration</span>
             </span>
-            <span className="font-mono text-base font-black text-slate-900 mt-2.5 block">
+            <span className="font-mono text-base font-black text-slate-900 mt-1 block leading-tight">
               {parsedData.duration}
             </span>
-          </div>
-
-          {/* Tile 4: Distance */}
-          <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 flex flex-col justify-between h-full">
-            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <span className="material-symbols-outlined text-[13px] text-slate-400">straighten</span>
-              <span>Distance</span>
-            </span>
-            <span className="font-mono text-base font-black text-slate-900 mt-2.5 block">
+            <span className="text-xs font-mono text-slate-500 mt-2 block">
               {parsedData.distance}
             </span>
           </div>
 
-          {/* Tile 5: Total Halts */}
-          <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 flex flex-col justify-between h-full">
+          {/* Tile 4: Speed & Halts */}
+          <div className="p-3.5 rounded-xl bg-slate-50/90 border border-slate-200/80">
             <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <span className="material-symbols-outlined text-[13px] text-slate-400">train</span>
-              <span>Total Halts</span>
-            </span>
-            <span className="font-mono text-base font-black text-slate-900 mt-2.5 block">
-              {parsedData.totalHalts}
-            </span>
-          </div>
-
-          {/* Tile 6: Avg Speed */}
-          <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 flex flex-col justify-between h-full">
-            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <span className="material-symbols-outlined text-[13px] text-slate-400">speed</span>
+              <span className="material-symbols-outlined text-[14px] text-slate-400">speed</span>
               <span>Avg Speed</span>
             </span>
-            <span className="font-mono text-base font-black text-slate-900 mt-2.5 block">
+            <span className="font-mono text-base font-black text-slate-900 mt-1 block leading-tight">
               {parsedData.avgSpeed}
+            </span>
+            <span className="text-xs font-mono text-slate-500 mt-2 block">
+              {parsedData.totalHalts} commercial halts
             </span>
           </div>
         </div>
@@ -678,6 +764,7 @@ export function LiveTrainStatusSection({
         <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto thin-scrollbar w-full sm:w-auto">
           {[
             { id: 'route', label: 'Route & Timetable', icon: 'table_rows' },
+            { id: 'eta', label: 'Expected Arrival (ETA)', icon: 'psychology' },
             { id: 'live', label: 'Live Status', icon: 'sensors' },
             { id: 'info', label: 'Train Info', icon: 'info' },
           ].map((tab) => (
@@ -740,7 +827,7 @@ export function LiveTrainStatusSection({
       </div>
 
       {/* ========================================================================= */}
-      {/* 5. TAB 1: ROUTE & TIMETABLE (LADDER TRACK VIEW & WORKSTATION)             */}
+      {/* 5. TAB 1: ROUTE & TIMETABLE (ORIGINAL CLEAN UI/UX)                        */}
       {/* ========================================================================= */}
       {activeSubTab === 'route' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
@@ -761,18 +848,16 @@ export function LiveTrainStatusSection({
                 <button
                   type="button"
                   onClick={() => setShowAllCheckpoints(true)}
-                  className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer font-bold ${
-                    showAllCheckpoints ? 'bg-[#0284C7] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer font-bold ${showAllCheckpoints ? 'bg-[#0284C7] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
                 >
                   All ({parsedData.totalCheckpoints})
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowAllCheckpoints(false)}
-                  className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer font-bold ${
-                    !showAllCheckpoints ? 'bg-[#0284C7] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  className={`px-2.5 py-0.5 rounded-md transition-all cursor-pointer font-bold ${!showAllCheckpoints ? 'bg-[#0284C7] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
                 >
                   Halts ({parsedData.commercialHaltsCount})
                 </button>
@@ -784,13 +869,13 @@ export function LiveTrainStatusSection({
               <div className="relative bg-white text-slate-900 flex flex-col">
                 {/* 1. Track Header Row: ARRIVAL | DAY 1 • DATE | DEPARTURE */}
                 <div className="flex items-center text-[10px] font-mono tracking-widest text-slate-400 uppercase bg-slate-50/60 border-b border-slate-200/80 py-2.5 px-4">
-                  <span className="w-20 sm:w-24 text-left font-bold pl-1 shrink-0 text-slate-400">ARRIVAL</span>
+                  <span className="w-24 sm:w-28 text-left font-bold pl-1 shrink-0 text-slate-400">ARRIVAL</span>
                   <div className="flex-1 flex justify-center">
                     <span className="px-3.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs font-mono font-bold border border-slate-200 shadow-2xs tracking-wider">
                       DAY 1 • {formatDateHeader(parsedData.startDate)}
                     </span>
                   </div>
-                  <span className="w-20 sm:w-24 text-right font-bold pr-1 shrink-0 text-slate-400">DEPARTURE</span>
+                  <span className="w-24 sm:w-28 text-right font-bold pr-1 shrink-0 text-slate-400">DEPARTURE</span>
                 </div>
 
                 {/* 2. Stations Ladder Track Spine Viewport with Dynamic Motion Blur */}
@@ -805,14 +890,14 @@ export function LiveTrainStatusSection({
 
                 <div
                   ref={trackViewportRef}
-                  className={`p-2 sm:p-3 pb-24 overflow-y-auto max-h-[660px] thin-scrollbar space-y-0 select-text relative bg-white will-change-scroll scroll-smooth ${
-                    isGliding ? 'pointer-events-none' : ''
-                  }`}
+                  className={`p-2 sm:p-3 pb-24 overflow-y-auto max-h-[660px] thin-scrollbar space-y-0 select-text relative bg-white will-change-scroll scroll-smooth ${isGliding ? 'pointer-events-none' : ''
+                    }`}
                 >
                   {visibleStops.map((st, idx) => {
                     const isFirst = idx === 0;
                     const isLast = idx === visibleStops.length - 1;
                     const isCurrent = st.isCurrent;
+                    const isDropLocation = st.code.toUpperCase() === effectiveDropCode.toUpperCase();
 
                     return (
                       <div
@@ -823,21 +908,33 @@ export function LiveTrainStatusSection({
                           contentVisibility: 'auto',
                           containIntrinsicSize: '60px',
                         }}
-                        className={`flex items-stretch py-2 px-2 rounded-xl transition-colors relative ${
-                          isCurrent
+                        className={`flex items-stretch py-2 px-2 rounded-xl transition-colors relative ${isDropLocation
+                          ? 'bg-emerald-50/70 border border-emerald-300/80 shadow-2xs ring-1 ring-emerald-200/60'
+                          : isCurrent
                             ? 'bg-sky-50/70 border border-sky-200/80 shadow-2xs'
                             : 'hover:bg-slate-50/80'
-                        }`}
+                          }`}
                       >
                         {/* Column 1: Arrival Time (Left) */}
-                        <div className="w-20 sm:w-24 shrink-0 font-mono text-left pl-1 self-center">
-                          <span className="text-xs sm:text-[13px] font-bold text-slate-700 block leading-tight">
-                            {isFirst ? '' : st.schedArr !== '-' ? st.schedArr : ''}
-                          </span>
-                          {showActualTimes && !isFirst && st.actArr !== '-' && (
-                            <span className="text-[11px] font-mono text-[#0284C7] block font-semibold mt-0.5">
-                              {st.actArr}
-                            </span>
+                        <div className="w-24 sm:w-28 shrink-0 font-mono text-left pl-1 self-center space-y-0.5">
+                          {!isFirst && st.schedArr !== '-' && (
+                            <>
+                              {/* Actual / Live Expected Arrival Time (Top) */}
+                              <span
+                                className={`text-xs sm:text-[13px] font-bold block leading-tight ${st.delayMinutes < 0
+                                    ? 'text-emerald-700'
+                                    : st.delayMinutes > 0
+                                      ? 'text-amber-700'
+                                      : 'text-slate-800'
+                                  }`}
+                              >
+                                {st.resolvedActArr !== '-' ? st.resolvedActArr : st.expArr}
+                              </span>
+                              {/* Scheduled Arrival Time (Below) */}
+                              <span className="text-[10px] text-slate-400 font-medium block leading-tight">
+                                Sched {st.schedArr}
+                              </span>
+                            </>
                           )}
                         </div>
 
@@ -845,15 +942,13 @@ export function LiveTrainStatusSection({
                         <div className="w-12 shrink-0 relative flex items-center justify-center self-stretch">
                           {/* Continuous Left Rail Line */}
                           <div
-                            className={`absolute w-[2px] bg-slate-300 left-[14px] ${
-                              isFirst ? 'top-1/2 bottom-0' : isLast ? 'top-0 bottom-1/2' : 'top-0 bottom-0'
-                            }`}
+                            className={`absolute w-[2px] bg-slate-300 left-[14px] ${isFirst ? 'top-1/2 bottom-0' : isLast ? 'top-0 bottom-1/2' : 'top-0 bottom-0'
+                              }`}
                           />
                           {/* Continuous Right Rail Line */}
                           <div
-                            className={`absolute w-[2px] bg-slate-300 right-[14px] ${
-                              isFirst ? 'top-1/2 bottom-0' : isLast ? 'top-0 bottom-1/2' : 'top-0 bottom-0'
-                            }`}
+                            className={`absolute w-[2px] bg-slate-300 right-[14px] ${isFirst ? 'top-1/2 bottom-0' : isLast ? 'top-0 bottom-1/2' : 'top-0 bottom-0'
+                              }`}
                           />
 
                           {/* Crosstie Sleepers */}
@@ -861,7 +956,7 @@ export function LiveTrainStatusSection({
                           <div className="absolute left-[14px] right-[14px] top-[50%] h-[1.5px] bg-slate-200" />
                           <div className="absolute left-[14px] right-[14px] top-[80%] h-[1.5px] bg-slate-200" />
 
-                          {/* Center Node Marker: Minimal Locomotive Badge for Current Station, Amber Bead for Others */}
+                          {/* Center Node Marker: Locomotive Badge for Current Station, Drop Pin for Selected Drop, Amber Bead for Others */}
                           {isCurrent ? (
                             <div
                               className="relative z-10 w-6 h-6 rounded-full bg-[#0284C7] text-white flex items-center justify-center shadow-xs ring-2 ring-sky-100 border border-white"
@@ -869,28 +964,43 @@ export function LiveTrainStatusSection({
                             >
                               <span className="material-symbols-outlined text-[13px] relative z-10">directions_railway</span>
                             </div>
+                          ) : isDropLocation ? (
+                            <div
+                              className="relative z-10 w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-xs ring-2 ring-emerald-100 border border-white"
+                              title="Your selected drop location"
+                            >
+                              <span className="material-symbols-outlined text-[13px] relative z-10">pin_drop</span>
+                            </div>
                           ) : (
                             <div
-                              className={`relative z-10 rounded-full shadow-xs border-2 border-white ${
-                                st.isHalt
-                                  ? 'w-3 h-3 bg-amber-400 ring-1 ring-amber-300/40'
-                                  : 'w-2 h-2 bg-slate-300'
-                              }`}
+                              className={`relative z-10 rounded-full shadow-xs border-2 border-white ${st.isHalt
+                                ? 'w-3 h-3 bg-amber-400 ring-1 ring-amber-300/40'
+                                : 'w-2 h-2 bg-slate-300'
+                                }`}
                             />
                           )}
                         </div>
 
 
                         {/* Column 3: Station Details */}
-                        <div className="flex-1 min-w-0 pr-3 self-center space-y-0.5">
-                          <div className="flex items-center gap-1.5">
+                        <div className="flex-1 min-w-0 pr-2 sm:pr-3 self-center space-y-0.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span
-                              className={`text-xs sm:text-[13px] font-bold tracking-tight truncate ${
-                                isCurrent ? 'text-[#0284C7]' : 'text-slate-900'
-                              }`}
+                              className={`text-xs sm:text-[13px] font-bold tracking-tight truncate ${isDropLocation
+                                ? 'text-emerald-800'
+                                : isCurrent
+                                  ? 'text-[#0284C7]'
+                                  : 'text-slate-900'
+                                }`}
                             >
                               {st.name}
                             </span>
+                            {isDropLocation && (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-mono font-bold flex items-center gap-1 shrink-0">
+                                <span className="material-symbols-outlined text-[12px] text-emerald-600">place</span>
+                                <span>Your Drop Location</span>
+                              </span>
+                            )}
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-slate-500">
                             <span className="font-semibold text-slate-700">{st.code}</span>
@@ -900,22 +1010,58 @@ export function LiveTrainStatusSection({
                               <>
                                 <span className="text-slate-300">•</span>
                                 <span className="px-1.5 py-0.2 rounded bg-slate-100 border border-slate-200/80 text-[10px] text-slate-600 font-semibold font-mono">
-                                  {st.pf} ✎
+                                  {st.pf}
                                 </span>
                               </>
+                            )}
+                            {isCurrent && (
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold flex items-center gap-1 border shadow-2xs ${st.delayMinutes < 0
+                                    ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                    : st.delayMinutes > 0
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                      : 'bg-sky-100 text-sky-900 border-sky-300'
+                                  }`}
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-current animate-ping" />
+                                <span>
+                                  {st.delayMinutes < 0
+                                    ? `Approaching • ${Math.abs(Math.round(st.delayMinutes))}m early`
+                                    : st.delayMinutes > 0
+                                      ? `Approaching • +${Math.round(st.delayMinutes)}m delay`
+                                      : 'Live Location • On time'}
+                                </span>
+                              </span>
+                            )}
+                            {!isCurrent && st.isPassed && (
+                              <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-0.5">
+                                <span className="material-symbols-outlined text-[12px] text-emerald-600">check_circle</span>
+                                <span>Departed</span>
+                              </span>
                             )}
                           </div>
                         </div>
 
                         {/* Column 4: Departure Time (Right) */}
-                        <div className="w-20 sm:w-24 shrink-0 font-mono text-right pr-1 self-center">
-                          <span className="text-xs sm:text-[13px] font-bold text-slate-800 block leading-tight">
-                            {isLast ? '' : st.schedDep !== '-' ? st.schedDep : ''}
-                          </span>
-                          {showActualTimes && !isLast && st.actDep !== '-' && (
-                            <span className="text-[11px] font-mono text-[#0284C7] block font-semibold mt-0.5">
-                              {st.actDep}
-                            </span>
+                        <div className="w-24 sm:w-28 shrink-0 font-mono text-right pr-1 self-center space-y-0.5">
+                          {!isLast && st.schedDep !== '-' && (
+                            <>
+                              {/* Actual / Live Expected Departure Time (Top) */}
+                              <span
+                                className={`text-xs sm:text-[13px] font-bold block leading-tight ${st.delayMinutes < 0
+                                    ? 'text-emerald-700'
+                                    : st.delayMinutes > 0
+                                      ? 'text-amber-700'
+                                      : 'text-slate-800'
+                                  }`}
+                              >
+                                {st.resolvedActDep !== '-' ? st.resolvedActDep : st.expDep}
+                              </span>
+                              {/* Scheduled Departure Time (Below) */}
+                              <span className="text-[10px] text-slate-400 font-medium block leading-tight">
+                                Sched {st.schedDep}
+                              </span>
+                            </>
                           )}
                         </div>
                       </div>
@@ -928,11 +1074,10 @@ export function LiveTrainStatusSection({
                   <button
                     type="button"
                     onClick={() => setIsInTrain(!isInTrain)}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer border ${
-                      isInTrain
-                        ? 'bg-[#0284C7] text-white border-[#0284C7] shadow-sky-200'
-                        : 'bg-white/95 hover:bg-slate-50 text-slate-700 border-slate-200/90 shadow-sm backdrop-blur-md'
-                    }`}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer border ${isInTrain
+                      ? 'bg-[#0284C7] text-white border-[#0284C7] shadow-sky-200'
+                      : 'bg-white/95 hover:bg-slate-50 text-slate-700 border-slate-200/90 shadow-sm backdrop-blur-md'
+                      }`}
                   >
                     <span className="material-symbols-outlined text-[16px] text-[#0284C7]">
                       location_on
@@ -961,11 +1106,10 @@ export function LiveTrainStatusSection({
                     </div>
                     <div className="flex items-center gap-2 text-xs font-mono">
                       <span
-                        className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase border ${
-                          parsedData.delayMinutes > 0
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        }`}
+                        className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase border ${parsedData.delayMinutes > 0
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          }`}
                       >
                         {parsedData.status}
                       </span>
@@ -1024,85 +1168,100 @@ export function LiveTrainStatusSection({
                   </thead>
 
                   <tbody className="divide-y divide-slate-100 font-sans">
-                    {visibleStops.map((st) => (
-                      <tr
-                        key={st.seq}
-                        style={{
-                          contentVisibility: 'auto',
-                          containIntrinsicSize: '40px',
-                        }}
-                        className={`hover:bg-slate-50/80 transition-colors ${
-                          st.isCurrent ? 'bg-cyan-50/50 font-medium' : ''
-                        }`}
-                      >
-                        {/* Seq */}
-                        <td className="py-3 px-3 font-mono text-slate-400 text-center">
-                          {st.seq}
-                        </td>
-
-                        {/* Station Name & Code */}
-                        <td className="py-3 px-3">
-                          <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                            <span>{st.name}</span>
-                            <span className="text-[10px] font-mono text-slate-400">({st.code})</span>
-                          </div>
-                          {st.isStart && (
-                            <span className="text-[10px] text-slate-400 font-mono block">Start</span>
-                          )}
-                          {st.isHalt && !st.isStart && (
-                            <span className="text-[9px] text-[#0284C7] font-mono uppercase font-semibold">
-                              Halt Station
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Scheduled Times */}
-                        <td className="py-3 px-2 text-center font-mono text-slate-600">{st.schedArr}</td>
-                        <td className="py-3 px-2 text-center font-mono text-slate-600">{st.schedDep}</td>
-
-                        {/* Actual Times */}
-                        {showActualTimes && (
-                          <>
-                            <td className="py-3 px-2 text-center font-mono text-slate-900 font-bold">
-                              {st.actArr}
-                            </td>
-                            <td className="py-3 px-2 text-center font-mono text-slate-900 font-bold">
-                              {st.actDep}
-                            </td>
-                          </>
-                        )}
-
-                        {/* Delay Badge */}
-                        <td className="py-3 px-3 text-center">
-                          <span
-                            className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-md ${
-                              st.delay.toLowerCase().includes('on time')
-                                ? 'text-emerald-700 bg-emerald-50 border border-emerald-100'
-                                : 'text-amber-700 bg-amber-50 border border-amber-100'
+                    {visibleStops.map((st) => {
+                      const isDropLocation = st.code.toUpperCase() === effectiveDropCode.toUpperCase();
+                      return (
+                        <tr
+                          key={st.seq}
+                          style={{
+                            contentVisibility: 'auto',
+                            containIntrinsicSize: '40px',
+                          }}
+                          className={`hover:bg-slate-50/80 transition-colors ${isDropLocation
+                            ? 'bg-emerald-50/70 font-medium'
+                            : st.isCurrent
+                              ? 'bg-cyan-50/50 font-medium'
+                              : ''
                             }`}
-                          >
-                            {st.delay}
-                          </span>
-                        </td>
+                        >
+                          {/* Seq */}
+                          <td className="py-3 px-3 font-mono text-slate-400 text-center">
+                            {st.seq}
+                          </td>
 
-                        {/* Platform */}
-                        <td className="py-3 px-3 text-center font-mono text-slate-700">
-                          {st.pf}
-                        </td>
+                          {/* Station Name & Code */}
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                              <span>{st.name}</span>
+                              <span className="text-[10px] font-mono text-slate-400">({st.code})</span>
+                              {isDropLocation && (
+                                <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-mono font-bold uppercase flex items-center gap-0.5">
+                                  <span className="material-symbols-outlined text-[10px] text-emerald-600">place</span>
+                                  <span>Your Drop Location</span>
+                                </span>
+                              )}
+                            </div>
+                            {st.isStart && (
+                              <span className="text-[10px] text-slate-400 font-mono block">Start</span>
+                            )}
+                            {st.isHalt && !st.isStart && (
+                              <span className="text-[9px] text-[#0284C7] font-mono uppercase font-semibold">
+                                Halt Station
+                              </span>
+                            )}
+                          </td>
 
-                        {/* Distance */}
-                        <td className="py-3 px-3 text-right font-mono text-slate-500">
-                          {st.distance}
-                        </td>
-                      </tr>
-                    ))}
+                          {/* Scheduled Times */}
+                          <td className="py-3 px-2 text-center font-mono text-slate-600">{st.schedArr}</td>
+                          <td className="py-3 px-2 text-center font-mono text-slate-600">{st.schedDep}</td>
+
+                          {/* Actual Times */}
+                          {showActualTimes && (
+                            <>
+                              <td className={`py-3 px-2 text-center font-mono font-bold ${st.delayMinutes < 0 ? 'text-emerald-700' : st.delayMinutes > 0 ? 'text-amber-700' : 'text-slate-800'
+                                }`}>
+                                {st.resolvedActArr !== '-' ? st.resolvedActArr : st.expArr}
+                              </td>
+                              <td className={`py-3 px-2 text-center font-mono font-bold ${st.delayMinutes < 0 ? 'text-emerald-700' : st.delayMinutes > 0 ? 'text-amber-700' : 'text-slate-800'
+                                }`}>
+                                {st.resolvedActDep !== '-' ? st.resolvedActDep : st.expDep}
+                              </td>
+                            </>
+                          )}
+
+                          {/* Delay Badge */}
+                          <td className="py-3 px-3 text-center">
+                            <span
+                              className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-md border ${st.delayMinutes < 0
+                                  ? 'text-emerald-800 bg-emerald-100 border-emerald-300'
+                                  : st.delayMinutes > 0
+                                    ? 'text-amber-800 bg-amber-100 border-amber-300'
+                                    : 'text-slate-700 bg-slate-100 border-slate-200'
+                                }`}
+                            >
+                              {st.delay}
+                            </span>
+                          </td>
+
+                          {/* Platform */}
+                          <td className="py-3 px-3 text-center font-mono text-slate-700">
+                            {st.pf}
+                          </td>
+
+                          {/* Distance */}
+                          <td className="py-3 px-3 text-right font-mono text-slate-500">
+                            {st.distance}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
           </div>
 
-          {/* Right Column: Live Telemetry Stack */}
+          {/* Right Column: Original 3 Telemetry Cards */}
           <div className="lg:col-span-5 space-y-4">
             {/* 1. Current Status Card */}
             <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 space-y-4">
@@ -1285,7 +1444,208 @@ export function LiveTrainStatusSection({
       )}
 
       {/* ========================================================================= */}
-      {/* 6. TAB 2: LIVE STATUS & TELEMETRY RADAR                                   */}
+      {/* 5B. TAB 2: ESTIMATED TIME OF ARRIVAL (ETA) & DROP LOCATION DEDICATED VIEW */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'eta' && (
+        <div className="space-y-5 animate-in fade-in duration-150">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* Left Main Card: Drop Location & ML Expected Arrival (7 Cols) */}
+            <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-6 space-y-5">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🧠</span>
+                  <span className="text-xs font-mono font-extrabold text-slate-800 uppercase tracking-wider">
+                    Expected Arrival
+                  </span>
+                </div>
+
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-50 border border-cyan-200 text-[#00A3C4] text-xs font-mono font-bold">
+                  <span className="w-2 h-2 rounded-full bg-[#00A3C4] animate-pulse" />
+                  <span>XGBoost ML ETA</span>
+                </span>
+              </div>
+
+              {/* Dropdown Selector */}
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
+                <label htmlFor="drop-station-selector-tab" className="text-xs font-mono font-bold text-slate-700 flex items-center gap-1.5 cursor-pointer">
+                  <span className="material-symbols-outlined text-[16px] text-[#0284C7]">place</span>
+                  <span>Select Your Drop Location:</span>
+                </label>
+
+                <div className="relative">
+                  <select
+                    id="drop-station-selector-tab"
+                    value={effectiveDropCode}
+                    onChange={(e) => setSelectedDropCode(e.target.value)}
+                    className="w-full appearance-none bg-white hover:bg-slate-100/80 border border-slate-200 text-slate-900 text-xs sm:text-sm font-mono font-bold py-2 pl-3.5 pr-10 rounded-lg focus:outline-none focus:border-[#0284C7] cursor-pointer shadow-2xs transition-colors"
+                  >
+                    {parsedData.stops.map((st) => {
+                      const isFinal = st.seq === parsedData.stops.length;
+                      const isCurrent = st.isCurrent;
+                      const isPassed = st.isPassed;
+                      return (
+                        <option key={st.code} value={st.code}>
+                          {st.name} ({st.code}){isFinal ? ' • (Final Destination)' : isCurrent ? ' • (Current Station)' : isPassed ? ' • (Passed)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <span className="material-symbols-outlined text-slate-400 text-[20px] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    unfold_more
+                  </span>
+                </div>
+              </div>
+
+              {/* Large Time Display */}
+              <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 pt-1">
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 font-sans block">
+                    Expected Arrival at <span className="font-bold text-slate-900">{expectedArrivalData.stationName} ({expectedArrivalData.stationCode})</span>
+                  </span>
+                  <div className="text-3xl sm:text-4xl font-black text-slate-900 font-mono tracking-tight mt-1">
+                    {expectedArrivalData.expectedTime}
+                  </div>
+                </div>
+
+                <div className="text-left sm:text-right text-xs font-mono text-slate-500">
+                  {expectedArrivalData.isPassed ? (
+                    <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-500 font-medium">Passed stop</span>
+                  ) : expectedArrivalData.isCurrent ? (
+                    <span className="px-2.5 py-1 rounded-md bg-sky-50 text-[#0284C7] font-bold border border-sky-200">Currently here</span>
+                  ) : (
+                    <div>
+                      <span className="font-bold text-slate-800 text-sm block">
+                        {expectedArrivalData.stopsUntilDrop === 1 ? 'Next station!' : `${expectedArrivalData.stopsUntilDrop} stops away`}
+                      </span>
+                      <span className="text-[11px] text-slate-400 block mt-0.5">
+                        {expectedArrivalData.distance} • Platform {expectedArrivalData.platform}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 3-Capsule Metrics Grid */}
+              <div className="grid grid-cols-3 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
+                <div>
+                  <span className="text-[10px] font-mono text-slate-400 font-bold block uppercase tracking-wider">
+                    Scheduled
+                  </span>
+                  <span className="font-mono text-sm sm:text-base font-extrabold text-slate-800 mt-1 block truncate">
+                    {expectedArrivalData.formattedScheduled}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-mono text-slate-400 font-bold block uppercase tracking-wider">
+                    Current Delay
+                  </span>
+                  <span
+                    className={`font-mono text-sm sm:text-base font-extrabold mt-1 block ${expectedArrivalData.currentDelayNum > 0 ? 'text-amber-700' : 'text-emerald-700'
+                      }`}
+                  >
+                    {expectedArrivalData.currentDelayText}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-mono text-slate-400 font-bold block uppercase tracking-wider">
+                    Expected Delay
+                  </span>
+                  <span
+                    className={`font-mono text-sm sm:text-base font-extrabold mt-1 block ${expectedArrivalData.expectedDelayNum > 0 ? 'text-amber-700' : 'text-emerald-700'
+                      }`}
+                  >
+                    {expectedArrivalData.expectedDelayText}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-500 font-sans leading-relaxed">
+                Based on current train conditions and historical travel patterns.
+              </p>
+
+              {/* Expandable: How is this calculated? */}
+              <details className="group border-t border-slate-100 pt-3 text-xs" open>
+                <summary className="cursor-pointer list-none flex items-center justify-between text-[#0284C7] hover:text-[#0369a1] font-semibold transition-colors select-none">
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <span className="material-symbols-outlined text-[16px]">help_outline</span>
+                    <span>How is this calculated?</span>
+                  </span>
+                  <span className="material-symbols-outlined text-[16px] transition-transform group-open:rotate-180 text-slate-400">
+                    expand_more
+                  </span>
+                </summary>
+                <div className="mt-2.5 p-3.5 rounded-xl bg-sky-50/70 border border-sky-200/70 text-slate-700 text-xs leading-relaxed">
+                  <p>
+                    Our XGBoost model predicts future delay based on the train's current delay and operational/weather conditions. The ETA engine converts this predicted delay into expected arrival times.
+                  </p>
+                </div>
+              </details>
+            </div>
+
+            {/* Right Card: Drop Station Trip Summary (5 Cols) */}
+            <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/90 shadow-xs p-6 space-y-5">
+              <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                Trip Summary to Drop Location
+              </span>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-600">Selected Destination</span>
+                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    {expectedArrivalData.stationCode}
+                  </span>
+                </div>
+                <div className="text-base font-extrabold text-slate-900">
+                  {expectedArrivalData.stationName}
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 text-xs font-mono">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">PLATFORM</span>
+                    <span className="font-bold text-slate-800">{expectedArrivalData.platform}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">DISTANCE</span>
+                    <span className="font-bold text-slate-800">{expectedArrivalData.distance}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Locomotive Real-Time Context */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                  Current Train Position
+                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800">
+                    {parsedData.currentStationName || parsedData.currentStation}
+                  </span>
+                  <span className="font-mono text-xs font-bold text-[#0284C7]">
+                    {parsedData.speed}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Next halt: <span className="font-semibold text-slate-700">{parsedData.nextStation}</span> (ETA {parsedData.nextEta})
+                </p>
+              </div>
+
+              {/* Quick Jump to Timeline Button */}
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('route')}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px] text-[#0284C7]">linear_scale</span>
+                <span>View on Ladder Track Timeline</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 6. TAB 3: LIVE STATUS & TELEMETRY RADAR                                   */}
       {/* ========================================================================= */}
       {activeSubTab === 'live' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">

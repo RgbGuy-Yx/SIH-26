@@ -16,6 +16,7 @@ export function StationTimelineSidebar({
   filteredStations = [],
   totalStops = 0,
   currentStn = '',
+  nextStn = '',
   activeStationCode = null,
   onSelectStation,
   wsConnected = false,
@@ -60,7 +61,7 @@ export function StationTimelineSidebar({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 truncate">
             <span className="font-mono font-bold text-xs px-2 py-0.5 rounded bg-slate-900 text-white shrink-0">
-              {trainNo}
+              #{trainNo}
             </span>
             <h2 className="text-sm font-bold text-slate-900 truncate tracking-tight">{trainName}</h2>
           </div>
@@ -72,16 +73,54 @@ export function StationTimelineSidebar({
               if (onSelectTrain) onSelectTrain(val);
               if (setCustomTrainInput) setCustomTrainInput(String(val));
             }}
-            className="text-[11px] bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-700 font-medium focus:outline-none focus:border-slate-400 shrink-0 cursor-pointer"
+            className="text-[11px] bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-700 font-medium focus:outline-none focus:border-slate-400 shrink-0 cursor-pointer max-w-[140px] truncate"
           >
-            <option value="12919">#12919 Malwa Exp</option>
             {trains.map((t) => (
               <option key={t.train_no} value={t.train_no}>
                 #{t.train_no} {t.train_name ? `(${t.train_name.slice(0, 14)})` : ''}
               </option>
             ))}
+            {!trains.some((t) => Number(t.train_no) === Number(trainNo)) && trainNo && (
+              <option value={trainNo}>
+                #{trainNo} {trainName ? `(${trainName.slice(0, 14)})` : ''}
+              </option>
+            )}
           </select>
         </div>
+
+        {/* Quick-Glance ETA Dual Banner: Next Halt ETA vs Terminus ETA */}
+        {filteredStations.length > 0 && (
+          <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+            {(() => {
+              const nextStop =
+                filteredStations.find((s) => s.status === 'NEXT_STOP' || (nextStn && s.station_code === nextStn)) ||
+                filteredStations.find((s) => s.status === 'UPCOMING');
+              const destStop = filteredStations[filteredStations.length - 1];
+
+              return (
+                <>
+                  <div className="px-2 py-1 rounded-lg bg-cyan-50/80 border border-cyan-200/80 flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-cyan-800 uppercase truncate">
+                      Next: {nextStop?.station_code || '—'}
+                    </span>
+                    <span className="font-mono text-[10px] font-extrabold text-[#00A3C4]">
+                      {nextStop ? formatHumanTime(nextStop.predicted_eta || nextStop.scheduled_arrival) : '—'}
+                    </span>
+                  </div>
+
+                  <div className="px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-slate-600 uppercase truncate">
+                      Dest: {destStop?.station_code || '—'}
+                    </span>
+                    <span className="font-mono text-[10px] font-extrabold text-slate-800">
+                      {destStop ? formatHumanTime(destStop.predicted_eta || destStop.scheduled_arrival) : '—'}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
 
         {/* Search filter input */}
         <div className="relative">
@@ -111,34 +150,32 @@ export function StationTimelineSidebar({
             <div className="absolute left-[7px] top-3 bottom-3 w-[1.5px] bg-slate-200 pointer-events-none" />
 
             {filteredStations.map((stop, idx) => {
-              const isCurrent = stop.station_code === currentStn;
-              const isNext = stop.status === 'NEXT_STOP';
+              const isCurrent = (currentStn && stop.station_code === currentStn) || stop.status === 'AT_STATION';
+              const isNext = (nextStn && stop.station_code === nextStn) || stop.status === 'NEXT_STOP';
               const isDeparted = stop.status === 'DEPARTED';
               const isSelected = activeStationCode === stop.station_code;
 
               return (
                 <div key={stop.station_code || idx} className="relative">
                   <div
-                    className={`absolute -left-6 top-3 w-3.5 h-3.5 rounded-full border-2 bg-white transition-all ${
-                      isCurrent
+                    className={`absolute -left-6 top-3 w-3.5 h-3.5 rounded-full border-2 bg-white transition-all ${isCurrent
                         ? 'border-[#00A3C4] bg-[#00A3C4] ring-3 ring-[#00A3C4]/25 scale-110'
                         : isNext
-                        ? 'border-[#00A3C4] bg-white ring-2 ring-cyan-100'
-                        : isDeparted
-                        ? 'border-slate-400 bg-slate-200'
-                        : 'border-slate-300 bg-white'
-                    }`}
+                          ? 'border-[#00A3C4] bg-white ring-2 ring-cyan-100'
+                          : isDeparted
+                            ? 'border-slate-400 bg-slate-200'
+                            : 'border-slate-300 bg-white'
+                      }`}
                   />
 
                   <div
                     onClick={() => onSelectStation && onSelectStation(stop.station_code)}
-                    className={`rounded-xl border p-2.5 transition-all cursor-pointer ${
-                      isSelected
+                    className={`rounded-xl border p-2.5 transition-all cursor-pointer ${isSelected
                         ? 'border-[#00A3C4] bg-cyan-50/50 shadow-xs ring-1 ring-[#00A3C4]'
                         : isCurrent
-                        ? 'border-slate-300 bg-slate-50/90 shadow-xs'
-                        : 'border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-300 shadow-xs'
-                    }`}
+                          ? 'border-slate-300 bg-slate-50/90 shadow-xs ring-1 ring-slate-300'
+                          : 'border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-300 shadow-xs'
+                      }`}
                   >
                     <div className="flex items-center justify-between pb-1 border-b border-slate-100">
                       <div className="flex items-center gap-1.5 truncate">
@@ -151,29 +188,28 @@ export function StationTimelineSidebar({
                       </div>
 
                       <span
-                        className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-tight ${
-                          isCurrent
+                        className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-tight ${isCurrent
                             ? 'bg-emerald-100 text-emerald-800'
                             : isNext
-                            ? 'bg-cyan-100 text-cyan-800 border border-cyan-200'
-                            : isDeparted
-                            ? 'bg-slate-100 text-slate-600'
-                            : stop.delay_minutes > 15
-                            ? 'bg-red-50 text-red-700 border border-red-200'
-                            : stop.delay_minutes > 0
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}
+                              ? 'bg-cyan-100 text-cyan-800 border border-cyan-200'
+                              : isDeparted
+                                ? 'bg-slate-100 text-slate-600'
+                                : stop.delay_minutes > 15
+                                  ? 'bg-red-50 text-red-700 border border-red-200'
+                                  : stop.delay_minutes > 0
+                                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                    : 'bg-slate-100 text-slate-700'
+                          }`}
                       >
                         {isCurrent
                           ? 'At Station'
                           : isNext
-                          ? 'Next Stop'
-                          : isDeparted
-                          ? 'Departed'
-                          : stop.delay_minutes > 0
-                          ? `+${stop.delay_minutes}m`
-                          : 'On Time'}
+                            ? 'Next Stop'
+                            : isDeparted
+                              ? 'Departed'
+                              : stop.delay_minutes > 0
+                                ? `+${stop.delay_minutes}m Late`
+                                : 'On Time'}
                       </span>
                     </div>
 
@@ -183,7 +219,7 @@ export function StationTimelineSidebar({
                           Scheduled
                         </span>
                         <span className="font-mono text-slate-700 font-semibold">
-                          {formatHumanTime(stop.scheduled_arrival)}
+                          {formatHumanTime(stop.scheduled_arrival || stop.scheduled_departure)}
                         </span>
                       </div>
 
@@ -192,11 +228,10 @@ export function StationTimelineSidebar({
                           Estimated ETA
                         </span>
                         <span
-                          className={`font-mono font-bold ${
-                            stop.delay_minutes > 0 ? 'text-amber-600' : 'text-[#00A3C4]'
-                          }`}
+                          className={`font-mono font-bold ${stop.delay_minutes > 0 ? 'text-amber-600' : 'text-[#00A3C4]'
+                            }`}
                         >
-                          {formatHumanTime(stop.predicted_eta || stop.scheduled_arrival)}
+                          {formatHumanTime(stop.predicted_eta || stop.scheduled_arrival || stop.scheduled_departure)}
                         </span>
                       </div>
                     </div>

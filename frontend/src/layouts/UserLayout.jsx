@@ -48,11 +48,10 @@ export function UserLayout() {
               <NavLink
                 to="/user-dashboard"
                 end
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  isFindTrainsActive
-                    ? 'bg-[#0284C7] text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${isFindTrainsActive
+                  ? 'bg-[#0284C7] text-white shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
               >
                 <span className="material-symbols-outlined text-[16px]">swap_calls</span>
                 <span>Find Trains</span>
@@ -60,11 +59,10 @@ export function UserLayout() {
 
               <NavLink
                 to="/user-dashboard?tab=live-status"
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  isLiveStatusActive
-                    ? 'bg-[#0284C7] text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${isLiveStatusActive
+                  ? 'bg-[#0284C7] text-white shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
               >
                 <span className="material-symbols-outlined text-[16px]">sensors</span>
                 <span>Live Status</span>
@@ -72,11 +70,10 @@ export function UserLayout() {
 
               <NavLink
                 to="/user-dashboard?tab=about"
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  isAboutActive
-                    ? 'bg-[#0284C7] text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${isAboutActive
+                  ? 'bg-[#0284C7] text-white shadow-xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
               >
                 <span className="material-symbols-outlined text-[16px]">info</span>
                 <span>About</span>
@@ -115,25 +112,7 @@ export function UserLayout() {
         </div>
       </main>
 
-      {/* Clean OCC-Compliant Footer (Full-width) */}
-      <footer className="bg-white border-t border-slate-200 py-4 px-4 sm:px-6 lg:px-8 text-xs text-slate-500 mt-auto">
-        <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[#0284C7] text-[18px]">verified</span>
-            <span className="text-slate-800 font-semibold">Indian Railways • RailRadar Passenger Portal</span>
-            <span className="text-slate-300">•</span>
-            <span className="text-slate-500 font-mono text-[11px]">SYS-NODE // LIVE</span>
-          </div>
-          <div className="flex items-center gap-3 text-[11px] font-mono text-slate-600">
-            <span className="text-emerald-700 font-semibold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              Sub-second GPS Telemetry
-            </span>
-            <span>•</span>
-            <span>XGBoost ML ETA Pipeline</span>
-          </div>
-        </div>
-      </footer>
+
     </div>
   );
 }

@@ -56,11 +56,10 @@ export function SettingsPage() {
                   <button
                     key={speed}
                     onClick={() => setSimulationSpeed(speed)}
-                    className={`px-3 py-1 rounded border font-mono font-bold transition-all text-xs ${
-                      simulationSpeed === speed
-                        ? 'bg-slate-900 border-slate-900 text-white shadow-xs'
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
+                    className={`px-3 py-1 rounded border font-mono font-bold transition-all text-xs ${simulationSpeed === speed
+                      ? 'bg-slate-900 border-slate-900 text-white shadow-xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
                   >
                     {speed}
                   </button>
@@ -100,14 +99,12 @@ export function SettingsPage() {
               <button
                 type="button"
                 onClick={() => setGeminiExplanationEnabled(!geminiExplanationEnabled)}
-                className={`w-10 h-5 rounded-full transition-colors relative ${
-                  geminiExplanationEnabled ? 'bg-[#0284C7]' : 'bg-slate-300'
-                }`}
+                className={`w-10 h-5 rounded-full transition-colors relative ${geminiExplanationEnabled ? 'bg-[#0284C7]' : 'bg-slate-300'
+                  }`}
               >
                 <span
-                  className={`w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 transition-transform ${
-                    geminiExplanationEnabled ? 'left-5.5' : 'left-1'
-                  }`}
+                  className={`w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 transition-transform ${geminiExplanationEnabled ? 'left-5.5' : 'left-1'
+                    }`}
                 />
               </button>
             </div>

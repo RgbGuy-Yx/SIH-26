@@ -59,11 +59,10 @@ export const TrainCard = React.memo(function TrainCard({
                 return (
                   <span
                     key={d.key}
-                    className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
-                      isRunning
-                        ? 'bg-[#0284C7]/15 text-[#0284C7] font-bold'
-                        : 'text-slate-300'
-                    }`}
+                    className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${isRunning
+                      ? 'bg-[#0284C7]/15 text-[#0284C7] font-bold'
+                      : 'text-slate-300'
+                      }`}
                   >
                     {d.label}
                   </span>

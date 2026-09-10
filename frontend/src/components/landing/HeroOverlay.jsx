@@ -2,15 +2,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 
 /*
- * HeroOverlay — RailRadar Cinematic 5-Stage Scroll Narrative Layer
- *
- * Implements design.md:
- *  - Bulletproof flex-based centering that never clips horizontally or vertically
- *  - 01 (0–25%): The Locomotive ("KNOW YOUR JOURNEY.")
- *  - 02 (25–45%): The Network Topology ("EVERY JOURNEY IS CONNECTED.")
- *  - 03 (45–65%): Disruption & Headway Cascade ("ONE DISRUPTION CAN RIPPLE...")
- *  - 04 (65–85%): RailRadar AI Intelligence ("RAILRADAR SEES THE CONNECTIONS.")
- *  - 05 (85–100%): Predictive Arrival 18:42 & Dual Action Gateway
+ * HeroOverlay — RailSense 5-Stage Scroll Narrative Layer
+ * Vercel Web Interface Guidelines: restrained copy, text-wrap: balance, tabular-nums, accessible icons.
  */
 
 function stageOpacity(scroll, fadeIn, holdStart, holdEnd, fadeOut) {
@@ -24,25 +17,25 @@ function stageOpacity(scroll, fadeIn, holdStart, holdEnd, fadeOut) {
 export default function HeroOverlay({ scrollProgress = 0 }) {
   const s = scrollProgress;
 
-  // 0–25%: Stage 01 — The Locomotive
+  // 0–25%: Stage 01 — Overview & Precision Dispatch
   const s1Opacity = stageOpacity(s, -0.01, 0, 0.16, 0.23);
 
-  // 25–45%: Stage 02 — The Network Topology
+  // 25–45%: Stage 02 — Network Topology
   const s2Opacity = stageOpacity(s, 0.25, 0.29, 0.38, 0.43);
 
-  // 45–65%: Stage 03 — Disruption & Headway Cascade
+  // 45–65%: Stage 03 — Contention & Delay Dynamics
   const s3Opacity = stageOpacity(s, 0.45, 0.49, 0.58, 0.63);
 
-  // 65–85%: Stage 04 — RailRadar AI Intelligence Stack
+  // 65–85%: Stage 04 — Siding Arbitration Engine
   const s4Opacity = stageOpacity(s, 0.65, 0.69, 0.78, 0.83);
 
-  // 85–100%: Stage 05 — Tactical ETA & Departure Gateways
+  // 85–100%: Stage 05 — Precision ETA & Dual Gateways
   const s5Opacity = stageOpacity(s, 0.85, 0.89, 0.98, 1.05);
 
   return (
     <div className="landing-text-layer">
       {/* ============================================================
-          Stage 01 (0–25%): The Train — KNOW YOUR JOURNEY
+          Stage 01 (0–25%): The Train & Network Premise
           ============================================================ */}
       {s1Opacity > 0.01 && (
         <div
@@ -54,30 +47,30 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
         >
           <div className="landing-hero-inner">
             {/* Live Telemetry Pill */}
-            <div className="hero-telemetry-badge">
-              <span className="telemetry-beacon"></span>
-              <span className="font-mono text-sky-400 font-semibold tracking-wider text-[10px] sm:text-[11px]">
-                CORRIDOR SATELLITE TELEMETRY
+            <div className="hero-telemetry-badge" role="status">
+              <span className="telemetry-beacon" aria-hidden="true"></span>
+              <span className="font-mono text-sky-400 font-medium tracking-wide text-[10px] sm:text-[11px] uppercase">
+                TACTICAL OCC
               </span>
-              <span className="text-slate-500 text-[10px]">·</span>
-              <span className="font-mono text-slate-300 text-[10px] sm:text-[11px]">
-                NDLS → HWH #12301
+              <span className="text-slate-600 text-[10px]" aria-hidden="true">·</span>
+              <span className="font-mono text-slate-300 text-[10px] sm:text-[11px] tabular-nums">
+                NDLS → HWH TRUNK CORRIDOR
               </span>
             </div>
 
             <h1 className="landing-hero-title">
-              KNOW YOUR<br />JOURNEY.
+              Line-clear certainty.<br />Real-time network telemetry.
             </h1>
             <p className="landing-hero-sub">
-              Sub-second predictive intelligence and real-time network telemetry for Indian Railways.
+              Sub-minute headway modeling, live axle-counter telemetry, and automated loop siding arbitration across 7,325 stations on Indian Railways.
             </p>
 
-            <div className="landing-hero-scroll-hint">
+            <div className="landing-hero-scroll-hint" aria-hidden="true">
               <div className="scroll-indicator">
                 <div className="scroll-dot"></div>
               </div>
-              <span className="font-mono text-[10px] sm:text-[11px] tracking-widest text-slate-400 uppercase">
-                Scroll to explore network
+              <span className="font-mono text-[10px] sm:text-[11px] tracking-wider text-slate-400">
+                Scroll to trace corridor dispatch
               </span>
             </div>
           </div>
@@ -85,7 +78,7 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
       )}
 
       {/* ============================================================
-          Stage 02 (25–45%): The Network — EVERY JOURNEY IS CONNECTED
+          Stage 02 (25–45%): Network Interconnection
           ============================================================ */}
       {s2Opacity > 0.01 && (
         <div
@@ -97,37 +90,37 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
         >
           <div className="stage-content-card">
             <div className="stage-header-pill stage-pill-azure">
-              <span className="material-symbols-outlined text-[13px] sm:text-[14px]">hub</span>
-              <span>TOPOLOGICAL MESH</span>
+              <span className="material-symbols-outlined text-[13px]" aria-hidden="true">hub</span>
+              <span>TOPOLOGICAL GRAPH MESH</span>
             </div>
 
             <h2 className="landing-stage-heading">
-              EVERY JOURNEY<br />IS CONNECTED.
+              Coupled block sections across 7,325 stations.
             </h2>
 
-            <div className="network-stat-chips">
+            <div className="network-stat-chips tabular-nums">
               <span className="stat-chip">
-                <strong className="text-white font-mono">7,325+</strong> Stations
+                <strong className="text-white font-mono">7,325</strong> Stations
               </span>
-              <span className="stat-chip-divider">·</span>
+              <span className="stat-chip-divider" aria-hidden="true">·</span>
               <span className="stat-chip">
-                <strong className="text-white font-mono">13,520+</strong> Daily Trains
+                <strong className="text-white font-mono">13,520+</strong> Daily Services
               </span>
-              <span className="stat-chip-divider">·</span>
+              <span className="stat-chip-divider" aria-hidden="true">·</span>
               <span className="stat-chip">
-                <strong className="text-white font-mono">68,000 km</strong> Track
+                <strong className="text-white font-mono">&lt; 38ms</strong> Query Bus
               </span>
             </div>
 
             <p className="landing-stage-sub">
-              One national railway. Millions of interconnected passenger and freight movements.
+              Delays are structural, not isolated. A 12-minute freight hold on the Kanpur–Prayagraj trunk ripples through three adjacent divisions within 45 minutes.
             </p>
           </div>
         </div>
       )}
 
       {/* ============================================================
-          Stage 03 (45–65%): Disruption — ONE DISRUPTION CAN RIPPLE
+          Stage 03 (45–65%): Cascade Dynamics
           ============================================================ */}
       {s3Opacity > 0.01 && (
         <div
@@ -139,30 +132,28 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
         >
           <div className="stage-content-card">
             <div className="stage-header-pill stage-pill-amber">
-              <span className="material-symbols-outlined text-[13px] sm:text-[14px]">warning</span>
-              <span>HEADWAY & INTERLOCKING CONTENTION</span>
+              <span className="material-symbols-outlined text-[13px]" aria-hidden="true">warning</span>
+              <span>HEADWAY CONTENTION DETECTED</span>
             </div>
 
             <h2 className="landing-stage-heading">
-              ONE DISRUPTION<br />
-              CAN RIPPLE<br />
-              <span className="text-gradient-amber">ACROSS THE NETWORK.</span>
+              Bottlenecks identified before signals lock.
             </h2>
 
-            <div className="disruption-alert-card">
-              <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+            <div className="disruption-alert-card" role="alert">
+              <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0"></span>
-                  <span className="font-mono text-[10px] sm:text-[11px] font-bold text-amber-300">
-                    SECTION CNB-PRYJ · BLOCK #42
+                  <span className="w-2 h-2 rounded-full bg-amber-400" aria-hidden="true"></span>
+                  <span className="font-mono text-[10px] sm:text-[11px] font-semibold text-amber-200">
+                    SECTION CNB–PRYJ · BLOCK SIGNAL #42
                   </span>
                 </div>
-                <span className="font-mono text-[10px] text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-800/40">
-                  +24m CASCADE RISK
+                <span className="font-mono text-[10px] text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 tabular-nums">
+                  +18m CASCADE RISK
                 </span>
               </div>
-              <p className="text-[11px] sm:text-[12px] text-slate-300 leading-relaxed m-0">
-                Freight rake holding main line causes trailing Rajdhani deceleration. Loop line standby required to prevent corridor deadlock.
+              <p className="text-[11px] sm:text-[12px] text-slate-300 leading-relaxed m-0 font-mono">
+                Freight #68716 (42 km/h) occupying single line. Trailing Rajdhani #12301 (128 km/h) closing distance. Siding bypass required at Aligarh Jn.
               </p>
             </div>
           </div>
@@ -170,7 +161,7 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
       )}
 
       {/* ============================================================
-          Stage 04 (65–85%): RailRadar AI — DETECT · PREDICT · RESOLVE · REROUTE
+          Stage 04 (65–85%): RailSense Arbitration Stack
           ============================================================ */}
       {s4Opacity > 0.01 && (
         <div
@@ -182,60 +173,58 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
         >
           <div className="stage-content-card">
             {/* Tactical Workflow Sequence */}
-            <div className="sequence-badge-flow">
-              <span className="seq-step seq-done">
-                <span className="material-symbols-outlined text-[12px] mr-1">sensors</span>
-                DETECT
+            <div className="sequence-badge-flow" aria-label="Resolution pipeline stages">
+              <span className="seq-step seq-done font-mono text-[10px]">
+                <span className="material-symbols-outlined text-[12px] mr-1" aria-hidden="true">sensors</span>
+                01 SENSE
               </span>
-              <span className="seq-arrow">&rarr;</span>
-              <span className="seq-step seq-done">
-                <span className="material-symbols-outlined text-[12px] mr-1">analytics</span>
-                PREDICT
+              <span className="seq-arrow text-slate-600" aria-hidden="true">&rarr;</span>
+              <span className="seq-step seq-done font-mono text-[10px]">
+                <span className="material-symbols-outlined text-[12px] mr-1" aria-hidden="true">analytics</span>
+                02 PREDICT
               </span>
-              <span className="seq-arrow">&rarr;</span>
-              <span className="seq-step seq-active">
-                <span className="material-symbols-outlined text-[12px] mr-1">tune</span>
-                RESOLVE
+              <span className="seq-arrow text-slate-600" aria-hidden="true">&rarr;</span>
+              <span className="seq-step seq-active font-mono text-[10px]">
+                <span className="material-symbols-outlined text-[12px] mr-1" aria-hidden="true">tune</span>
+                03 ARBITRATE
               </span>
-              <span className="seq-arrow">&rarr;</span>
-              <span className="seq-step seq-active">
-                <span className="material-symbols-outlined text-[12px] mr-1">alt_route</span>
-                REROUTE
+              <span className="seq-arrow text-slate-600" aria-hidden="true">&rarr;</span>
+              <span className="seq-step seq-active font-mono text-[10px]">
+                <span className="material-symbols-outlined text-[12px] mr-1" aria-hidden="true">sync_alt</span>
+                04 INFORM
               </span>
             </div>
 
             <h2 className="landing-stage-heading">
-              RAILRADAR SEES<br />
-              <span className="text-gradient-cyan">THE CONNECTIONS.</span>
+              Preemptive loop siding allocation in &lt; 38 ms.
             </h2>
 
-            <div className="ai-insight-strip">
+            <div className="ai-insight-strip tabular-nums">
               <div className="ai-insight-item">
-                <span className="text-slate-400 text-[9px] sm:text-[10px] font-mono uppercase">ALGORITHM</span>
-                <span className="text-sky-300 text-[11px] sm:text-[12px] font-mono font-semibold">GNN + XGBoost</span>
+                <span className="text-slate-400 text-[9px] sm:text-[10px] font-mono uppercase">SEARCH TIME</span>
+                <span className="text-sky-300 text-[11px] sm:text-[12px] font-mono font-semibold">&lt; 38 ms</span>
               </div>
-              <div className="ai-insight-divider"></div>
+              <div className="ai-insight-divider" aria-hidden="true"></div>
               <div className="ai-insight-item">
-                <span className="text-slate-400 text-[9px] sm:text-[10px] font-mono uppercase">PERMUTATIONS</span>
-                <span className="text-emerald-300 text-[11px] sm:text-[12px] font-mono font-semibold">10,000+ / sec</span>
+                <span className="text-slate-400 text-[9px] sm:text-[10px] font-mono uppercase">ARBITRATION</span>
+                <span className="text-slate-200 text-[11px] sm:text-[12px] font-mono font-semibold">Hold Freight Loop 2</span>
               </div>
-              <div className="ai-insight-divider"></div>
+              <div className="ai-insight-divider" aria-hidden="true"></div>
               <div className="ai-insight-item">
-                <span className="text-slate-400 text-[9px] sm:text-[10px] font-mono uppercase">ACTION</span>
-                <span className="text-cyan-300 text-[11px] sm:text-[12px] font-mono font-semibold">Loop 2 Precedence</span>
+                <span className="text-slate-400 text-[9px] sm:text-[10px] font-mono uppercase">HEADWAY PRESERVED</span>
+                <span className="text-emerald-400 text-[11px] sm:text-[12px] font-mono font-semibold">+14 min saved</span>
               </div>
             </div>
 
-            <p className="landing-stage-sub uppercase tracking-wider font-mono text-[11px] sm:text-[12px] text-slate-300 mt-2">
-              PREDICT. RESOLVE. REROUTE.
+            <p className="landing-stage-sub font-mono text-[11px] sm:text-[12px] text-slate-400 mt-3">
+              Route conflict resolved topologically before physical switch interlocking locks.
             </p>
           </div>
         </div>
       )}
 
       {/* ============================================================
-          Stage 05 (85–100%): Forward — Arrival 18:42 & Dual Gateway
-          Adaptive layout that is 100% visible on all viewports
+          Stage 05 (85–100%): Tactical ETA & Portals
           ============================================================ */}
       {s5Opacity > 0.01 && (
         <div
@@ -248,19 +237,17 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
           <div className="landing-final-grid">
             {/* Left Column: Heading & Action Buttons */}
             <div className="landing-final-left">
-              <div className="stage-header-pill stage-pill-azure mb-1.5 sm:mb-2">
-                <span className="material-symbols-outlined text-[13px] sm:text-[14px]">speed</span>
+              <div className="stage-header-pill stage-pill-azure mb-2">
+                <span className="material-symbols-outlined text-[13px]" aria-hidden="true">speed</span>
                 <span>SUB-MINUTE PREDICTIVE ETA</span>
               </div>
 
               <h2 className="landing-final-heading">
-                KNOW WHEN<br />
-                YOU'LL ARRIVE.
+                Arrive with certainty.<br />Understand why.
               </h2>
 
               <p className="landing-final-sub">
-                <strong className="text-white">UNDERSTAND WHY.</strong><br />
-                Move forward with confidence across the Indian Railways network.
+                Clear, explainable journey forecasts for passengers and tactical decision support for section controllers.
               </p>
 
               {/* Action Buttons */}
@@ -270,16 +257,16 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
                   state={{ mode: 'user' }}
                   className="landing-btn landing-btn-primary"
                 >
-                  <span className="material-symbols-outlined text-[18px]">person</span>
-                  <span>EXPLORE PASSENGER PORTAL</span>
+                  <span className="material-symbols-outlined text-[16px]" aria-hidden="true">person</span>
+                  <span>Passenger Portal</span>
                 </Link>
                 <Link
                   to="/login?role=control_room"
                   state={{ mode: 'control_room' }}
                   className="landing-btn landing-btn-secondary"
                 >
-                  <span className="material-symbols-outlined text-[18px]">lock</span>
-                  <span>CONTROL ROOM OCC</span>
+                  <span className="material-symbols-outlined text-[16px]" aria-hidden="true">lock</span>
+                  <span>Control Room OCC</span>
                 </Link>
               </div>
             </div>
@@ -290,8 +277,8 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
                 {/* Header */}
                 <div className="eta-card-tactical__header">
                   <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
-                    <span className="font-mono text-[10px] sm:text-[12px] font-bold text-white tracking-wide">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" aria-hidden="true"></span>
+                    <span className="font-mono text-[11px] sm:text-[12px] font-semibold text-white tracking-wide">
                       TRAIN #12301 · RAJDHANI EXP
                     </span>
                   </div>
@@ -301,57 +288,57 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
                 {/* Main Arrival Display */}
                 <div className="eta-card-tactical__time-row">
                   <div>
-                    <span className="text-[8px] sm:text-[10px] font-mono text-slate-400 uppercase tracking-widest block">
+                    <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider block">
                       PREDICTED DESTINATION ARRIVAL
                     </span>
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-mono text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight">
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="font-mono text-2xl sm:text-3xl lg:text-4xl font-semibold text-white tracking-tight tabular-nums">
                         18:42
                       </span>
-                      <span className="font-mono text-[10px] sm:text-xs font-semibold text-emerald-400 bg-emerald-950/80 px-1.5 sm:px-2 py-0.5 rounded border border-emerald-800/60">
+                      <span className="font-mono text-[10px] sm:text-xs font-medium text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40 tabular-nums">
                         +2m PREDICTED
                       </span>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-[8px] sm:text-[10px] font-mono text-slate-400 uppercase tracking-widest block">
+                    <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider block">
                       DESTINATION
                     </span>
-                    <span className="font-mono text-[11px] sm:text-sm font-bold text-sky-300">
+                    <span className="font-mono text-[11px] sm:text-sm font-semibold text-sky-300">
                       HOWRAH JN (HWH)
                     </span>
                   </div>
                 </div>
 
-                {/* 4-Column OCC Metric Strip (design.md Section 5.4) */}
-                <div className="grid grid-cols-4 gap-1 p-1 sm:p-2 rounded-xl bg-slate-900/90 border border-slate-800 text-center my-1.5 sm:my-2.5">
+                {/* 4-Column OCC Metric Strip */}
+                <div className="grid grid-cols-4 gap-1 p-2 rounded-lg bg-black/40 border border-white/[0.06] text-center my-2 tabular-nums">
                   <div>
                     <span className="text-[8px] sm:text-[9px] font-mono text-slate-400 uppercase block">STATUS</span>
-                    <span className="text-[9px] sm:text-[11px] font-mono font-bold text-emerald-400">ON TRACK</span>
+                    <span className="text-[10px] sm:text-[11px] font-mono font-medium text-emerald-400">ON TRACK</span>
                   </div>
-                  <div className="border-l border-slate-800">
+                  <div className="border-l border-white/[0.06]">
                     <span className="text-[8px] sm:text-[9px] font-mono text-slate-400 uppercase block">SPEED</span>
-                    <span className="text-[9px] sm:text-[11px] font-mono font-bold text-sky-300">128 km/h</span>
+                    <span className="text-[10px] sm:text-[11px] font-mono font-medium text-sky-300">128&nbsp;km/h</span>
                   </div>
-                  <div className="border-l border-slate-800">
+                  <div className="border-l border-white/[0.06]">
                     <span className="text-[8px] sm:text-[9px] font-mono text-slate-400 uppercase block">PLATFORM</span>
-                    <span className="text-[9px] sm:text-[11px] font-mono font-bold text-cyan-300">PF 09</span>
+                    <span className="text-[10px] sm:text-[11px] font-mono font-medium text-slate-200">PF 09</span>
                   </div>
-                  <div className="border-l border-slate-800">
+                  <div className="border-l border-white/[0.06]">
                     <span className="text-[8px] sm:text-[9px] font-mono text-slate-400 uppercase block">CONFIDENCE</span>
-                    <span className="text-[9px] sm:text-[11px] font-mono font-bold text-emerald-400">99.4%</span>
+                    <span className="text-[10px] sm:text-[11px] font-mono font-medium text-emerald-400">99.4%</span>
                   </div>
                 </div>
 
                 {/* Multi-Segment Switch Health */}
-                <div className="flex items-center justify-between pt-1.5 border-t border-slate-800/80">
-                  <span className="text-[8px] sm:text-[10px] font-mono text-slate-400">SWITCH HEALTH</span>
-                  <div className="flex items-center gap-1 font-mono text-[8px] sm:text-[9px] font-bold">
-                    <span className="px-1 py-0.5 rounded-[2px] bg-emerald-400/20 text-emerald-300 border border-emerald-500/30">LO: OK</span>
-                    <span className="px-1 py-0.5 rounded-[2px] bg-emerald-400/20 text-emerald-300 border border-emerald-500/30">BL: OK</span>
-                    <span className="px-1 py-0.5 rounded-[2px] bg-emerald-400/20 text-emerald-300 border border-emerald-500/30">PM: OK</span>
-                    <span className="px-1 py-0.5 rounded-[2px] bg-emerald-400/20 text-emerald-300 border border-emerald-500/30">TR: OK</span>
-                    <span className="px-1 py-0.5 rounded-[2px] bg-emerald-400/20 text-emerald-300 border border-emerald-500/30">FR: OK</span>
+                <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+                  <span className="text-[9px] sm:text-[10px] font-mono text-slate-400">SWITCH INTERLOCKING</span>
+                  <div className="flex items-center gap-1 font-mono text-[8px] sm:text-[9px]">
+                    <span className="px-1.5 py-0.5 rounded-[3px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">LO: OK</span>
+                    <span className="px-1.5 py-0.5 rounded-[3px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">BL: OK</span>
+                    <span className="px-1.5 py-0.5 rounded-[3px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">PM: OK</span>
+                    <span className="px-1.5 py-0.5 rounded-[3px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">TR: OK</span>
+                    <span className="px-1.5 py-0.5 rounded-[3px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">FR: OK</span>
                   </div>
                 </div>
               </div>

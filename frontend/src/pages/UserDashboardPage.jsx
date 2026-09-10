@@ -433,11 +433,10 @@ export function UserDashboardPage() {
                         key={type.id}
                         type="button"
                         onClick={() => setSelectedType(type.id)}
-                        className={`px-3 py-1 rounded-full text-xs transition-all font-medium ${
-                          isSelected
-                            ? 'bg-[#0284C7] text-white font-bold shadow-2xs'
-                            : 'bg-slate-100/80 hover:bg-slate-200 text-slate-700'
-                        }`}
+                        className={`px-3 py-1 rounded-full text-xs transition-all font-medium ${isSelected
+                          ? 'bg-[#0284C7] text-white font-bold shadow-2xs'
+                          : 'bg-slate-100/80 hover:bg-slate-200 text-slate-700'
+                          }`}
                       >
                         {type.label}
                       </button>

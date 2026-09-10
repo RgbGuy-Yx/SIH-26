@@ -13,6 +13,7 @@ from app.simulation.schemas import TrainStatus, TrainSimulationState
 from app.ml.schemas import WeatherInput, StationInferenceInput, PredictionResult
 from app.ml.predictor import predict_delay
 from app.graph.conflict_engine import ConflictEngine, ConflictResult
+from app.integrations.weather_provider import weather_provider
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +205,7 @@ class TrainEntity:
         sched_dep = self.current_stop["scheduled_departure"] or self.base_date
         hour_of_day = sched_dep.hour
 
-        # Determine active weather: explicit dynamic weather override, or stop's dataset meteorological record
+        # Determine active weather: explicit dynamic weather override, or stop's dataset record
         active_weather = self.current_weather
         if active_weather is None and self.current_stop.get("weather"):
             try:

@@ -295,11 +295,10 @@ export function LoginPage() {
                 setErrorMsg('');
                 setSuccessMsg('');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                authMode === 'control_room'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${authMode === 'control_room'
                   ? 'bg-white text-[#0284C7] shadow-xs'
                   : 'text-slate-500 hover:text-slate-800'
-              }`}
+                }`}
             >
               CONTROL ROOM
             </button>
@@ -310,11 +309,10 @@ export function LoginPage() {
                 setErrorMsg('');
                 setSuccessMsg('');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                authMode === 'user'
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${authMode === 'user'
                   ? 'bg-white text-[#0284C7] shadow-xs'
                   : 'text-slate-500 hover:text-slate-800'
-              }`}
+                }`}
             >
               USER
             </button>
@@ -334,23 +332,23 @@ export function LoginPage() {
                   {authStep === 'credentials'
                     ? 'local_police'
                     : authStep === 'mobile'
-                    ? 'phone_iphone'
-                    : 'phonelink_lock'}
+                      ? 'phone_iphone'
+                      : 'phonelink_lock'}
                 </span>
                 <div className="text-xs">
                   <h2 className="font-bold text-slate-900 uppercase tracking-tight">
                     {authStep === 'credentials'
                       ? 'District Officer Login'
                       : authStep === 'mobile'
-                      ? 'Verify Your Mobile'
-                      : 'Verify OTP'}
+                        ? 'Verify Your Mobile'
+                        : 'Verify OTP'}
                   </h2>
                   <p className="text-slate-500 text-[11px] mt-0.5 leading-snug">
                     {authStep === 'credentials'
                       ? 'Step 1: Sign in with your Officer ID and password.'
                       : authStep === 'mobile'
-                      ? 'Step 2: Enter your mobile number to receive a 6-digit OTP.'
-                      : `Step 3: Enter the 6-digit OTP code sent to +91 ${mobileNumber}.`}
+                        ? 'Step 2: Enter your mobile number to receive a 6-digit OTP.'
+                        : `Step 3: Enter the 6-digit OTP code sent to +91 ${mobileNumber}.`}
                   </p>
                 </div>
               </div>

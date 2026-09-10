@@ -3,8 +3,9 @@ XGBoost Delay Predictor with Graceful Fallback Strategy.
 Phase 2A: ML Delay Inference Engine.
 """
 
+import time
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 from datetime import datetime
 
 from app.ml.model_loader import get_model
@@ -23,6 +24,19 @@ from app.ml.schemas import (
 from app.ml.eta_calculator import calculate_station_eta
 
 logger = logging.getLogger(__name__)
+
+_last_fallback_warning: Dict[str, float] = {}
+
+
+def _log_fallback_warning(reason: str) -> None:
+    """Rate-limits repeated identical fallback warnings to once every 60 seconds."""
+    now = time.time()
+    last_t = _last_fallback_warning.get(reason, 0.0)
+    if now - last_t >= 60.0:
+        _last_fallback_warning[reason] = now
+        logger.warning(f"[ML Fallback] {reason}")
+    else:
+        logger.debug(f"[ML Fallback Suppressed] {reason}")
 
 
 def predict_delay(input_data: StationInferenceInput) -> PredictionResult:
@@ -64,7 +78,7 @@ def predict_delay(input_data: StationInferenceInput) -> PredictionResult:
                 f"falling back to last known accumulated delay ({fallback_delay:.2f} mins)."
             )
 
-        logger.warning(f"[ML Fallback] {reason}")
+        _log_fallback_warning(reason)
         return PredictionResult(
             predicted_delay_minutes=round(fallback_delay, 2),
             is_fallback=True,

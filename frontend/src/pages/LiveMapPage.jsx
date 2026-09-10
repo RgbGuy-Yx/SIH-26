@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useSimulation } from '../context/SimulationContext';
 import { MapLibreRailwayMap } from '../components/MapLibreRailwayMap';
 import {
@@ -8,6 +8,7 @@ import {
 } from '../components/live-map';
 import { api } from '../services/api';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { calculateExpectedTime, formatTimeWithAmPm } from '../utils/dateTimeUtils';
 
 /**
  * LiveMapPage - Orchestrator for Real-Time Railway Map and Telemetry
@@ -18,6 +19,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
  * - TrainOverviewCard (Right Sidebar with Live Telemetry vs Simulation tabs)
  */
 export function LiveMapPage() {
+  const mapRef = useRef(null);
   const {
     topology,
     trains,
@@ -37,7 +39,7 @@ export function LiveMapPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showLiveFeed, setShowLiveFeed] = useState(true);
   const [showVirtualSim, setShowVirtualSim] = useState(true);
-  const [overviewTab, setOverviewTab] = useState('live'); // 'live' | 'simulation'
+  const [overviewTab, setOverviewTab] = useState('overview'); // 'overview' | 'signals' | 'timetable' | 'telemetry'
 
   // Dynamic selected train attributes
   const currentTrain = selectedTrain || selectedTrainDetails || (trains.length > 0 ? trains[0] : null);
@@ -49,7 +51,7 @@ export function LiveMapPage() {
   const [liveStatusLoading, setLiveStatusLoading] = useState(false);
   const [liveStatusData, setLiveStatusData] = useState(null);
   const [liveStatusError, setLiveStatusError] = useState(null);
-  const [customTrainInput, setCustomTrainInput] = useState(String(trainNo || '12919'));
+  const [customTrainInput, setCustomTrainInput] = useState(String(trainNo || '12003'));
 
   // Sync custom train input when active train changes
   useEffect(() => {
@@ -153,7 +155,7 @@ export function LiveMapPage() {
         setLiveStatusError(res.live_status.error || `Provider unable to verify live status for train #${targetNo}`);
       } else if (res?.live_status) {
         setLiveStatusData(res);
-        setOverviewTab('live');
+        setOverviewTab('overview');
         setShowLiveFeed(true);
       } else {
         setLiveStatusError(`No telemetry response from live provider for train #${targetNo}`);
@@ -273,29 +275,77 @@ export function LiveMapPage() {
   const scheduledDestinationEta = useMemo(() => {
     return (
       raw.destinationETA ||
-      (Array.isArray(raw.route) && raw.route.length > 0 ? raw.route[raw.route.length - 1].scheduledArrival : null) ||
+      (Array.isArray(raw.route) && raw.route.length > 0
+        ? raw.route[raw.route.length - 1].scheduledArrival || raw.route[raw.route.length - 1].arrival
+        : null) ||
+      liveStatusData?.live_ml_prediction?.final_destination_prediction?.scheduled_arrival ||
       live?.expected_arrival_time ||
       currentTrain?.scheduled_destination_eta ||
       null
     );
-  }, [raw, live, currentTrain]);
+  }, [raw, live, currentTrain, liveStatusData]);
 
   const updatedEta = useMemo(() => {
     const base = scheduledDestinationEta;
     if (!base) return 'Schedule Synchronized';
-    try {
-      const d = new Date(base);
-      if (!isNaN(d.getTime())) {
-        d.setMinutes(d.getMinutes() + updatedTotalDelay);
-        return formatHumanTime(d.toISOString());
-      }
-      return formatHumanTime(base);
-    } catch {
-      return 'Schedule Synchronized';
-    }
+    return calculateExpectedTime(base, updatedTotalDelay);
   }, [scheduledDestinationEta, updatedTotalDelay]);
 
-  // AI Operational Reasoning Narrative
+  const nextHaltScheduled = useMemo(() => {
+    if (raw.nextHalt?.scheduledArrival || raw.nextHalt?.arrival || raw.nextHalt?.scheduledDeparture || raw.nextHalt?.departure) {
+      return raw.nextHalt.scheduledArrival || raw.nextHalt.arrival || raw.nextHalt.scheduledDeparture || raw.nextHalt.departure;
+    }
+    if (Array.isArray(raw.route) && nextStationCode) {
+      const match = raw.route.find((s) => (s.stationCode || s.code || s.station?.code) === nextStationCode);
+      if (match) {
+        return match.scheduledArrival || match.arrival || match.scheduledDeparture || match.departure || null;
+      }
+    }
+    if (Array.isArray(raw.route_stops) && nextStationCode) {
+      const match = raw.route_stops.find((s) => (s.code || s.stationCode) === nextStationCode);
+      if (match) {
+        return match.scheduledArrival || match.arrival || match.scheduledDeparture || match.departure || null;
+      }
+    }
+    if (liveStatusData?.live_ml_prediction?.next_station_prediction?.scheduled_arrival) {
+      return liveStatusData.live_ml_prediction.next_station_prediction.scheduled_arrival;
+    }
+    if (currentTrain?.next_station_scheduled_arrival || currentTrain?.scheduled_arrival) {
+      return currentTrain.next_station_scheduled_arrival || currentTrain.scheduled_arrival;
+    }
+    return null;
+  }, [raw, nextStationCode, liveStatusData, currentTrain]);
+
+  const nextHaltEta = useMemo(() => {
+    if (raw.nextHalt?.actualArrival || raw.nextHalt?.expectedArrival || raw.nextHalt?.actual_arrival) {
+      return formatTimeWithAmPm(raw.nextHalt.actualArrival || raw.nextHalt.expectedArrival || raw.nextHalt.actual_arrival);
+    }
+    if (Array.isArray(raw.route) && nextStationCode) {
+      const match = raw.route.find((s) => (s.stationCode || s.code || s.station?.code) === nextStationCode);
+      if (match) {
+        if (match.actualArrival || match.expectedArrival) {
+          return formatTimeWithAmPm(match.actualArrival || match.expectedArrival);
+        }
+        const sched = match.scheduledArrival || match.arrival || match.scheduledDeparture || match.departure;
+        if (sched) {
+          const delay = Number(match.delayArrival ?? match.delay ?? liveDelay ?? updatedTotalDelay ?? 0);
+          return calculateExpectedTime(sched, delay);
+        }
+      }
+    }
+    if (liveStatusData?.live_ml_prediction?.next_station_prediction?.predicted_eta) {
+      return formatTimeWithAmPm(liveStatusData.live_ml_prediction.next_station_prediction.predicted_eta);
+    }
+    if (nextHaltScheduled) {
+      return calculateExpectedTime(nextHaltScheduled, liveDelay);
+    }
+    if (updatedEta && updatedEta !== 'Schedule Synchronized') {
+      return updatedEta;
+    }
+    return null;
+  }, [raw, nextStationCode, liveDelay, updatedTotalDelay, nextHaltScheduled, liveStatusData, updatedEta]);
+
+  // NetworkX Operational Reasoning Narrative
   const operationalReasoning = useMemo(() => {
     if (!selectedTrain && !trainNo) return 'Awaiting dispatch telemetry...';
     if (isCompleted) {
@@ -352,47 +402,111 @@ export function LiveMapPage() {
     };
   }, [liveStatusData, live, raw, liveLat, liveLng, liveTrainNo, liveTrainName, liveSpeed, liveBearing, liveDelay, liveOverallStatus, currStationName, liveIsActualPos, liveLastUpdated]);
 
-  // Station Timetable Sequence (Dynamic 4-tier fallback)
+  // Station Timetable Sequence (100% Real-Time Synchronized)
   const stationTimetable = useMemo(() => {
-    const liveRoute = liveStatusData?.live_status?.raw_data?.route;
-    const liveRouteStops = liveStatusData?.live_status?.raw_data?.route_stops;
+    const liveRaw = liveStatusData?.live_status?.raw_data || {};
+    const liveRoute = Array.isArray(liveRaw.route) && liveRaw.route.length > 0 ? liveRaw.route : null;
+    const liveRouteStops = Array.isArray(liveRaw.route_stops) && liveRaw.route_stops.length > 0 ? liveRaw.route_stops : null;
 
-    if (Array.isArray(liveRoute) && liveRoute.length > 0) {
+    if (liveRoute) {
+      const curIdx = liveRoute.findIndex((s) => (s.stationCode || s.code || s.station?.code) === currStationCode);
+
       return liveRoute.map((stop, idx) => {
+        const stnCode = stop.stationCode || stop.code || stop.station?.code || '';
+        const stnName = stop.stationName || stop.name || stop.station?.name || stationNameMap[stnCode] || stnCode;
         const rawStatus = (stop.status || '').toUpperCase();
-        const stopStatus =
-          rawStatus === 'DEPARTED' ? 'DEPARTED' :
-          rawStatus === 'ARRIVED' || rawStatus === 'AT_STATION' ? 'AT_STATION' :
-          rawStatus === 'UPCOMING' ? 'UPCOMING' :
-          idx === 0 ? 'DEPARTED' : 'UPCOMING';
+        let stopStatus = 'UPCOMING';
+
+        if (currStationCode && stnCode === currStationCode) {
+          stopStatus = 'AT_STATION';
+        } else if (nextStationCode && stnCode === nextStationCode) {
+          stopStatus = 'NEXT_STOP';
+        } else if (rawStatus === 'DEPARTED' || rawStatus === 'PASSED') {
+          stopStatus = 'DEPARTED';
+        } else if (curIdx !== -1) {
+          if (idx < curIdx) stopStatus = 'DEPARTED';
+          else if (idx === curIdx + 1 && !nextStationCode) stopStatus = 'NEXT_STOP';
+        } else if (idx === 0) {
+          stopStatus = 'DEPARTED';
+        }
+
+        const schedArr = stop.scheduledArrival || stop.arrival || stop.scheduledDeparture || stop.departure;
+        const schedDep = stop.scheduledDeparture || stop.departure || stop.scheduledArrival || stop.arrival;
+        const delayForStop = Number(stop.delayArrival ?? stop.delayDeparture ?? stop.delay ?? updatedTotalDelay ?? liveDelay ?? 0);
+        const predictedEta = stop.actualArrival
+          ? formatTimeWithAmPm(stop.actualArrival)
+          : schedArr
+            ? calculateExpectedTime(schedArr, delayForStop)
+            : null;
+
+        const platformStr = stop.platform
+          ? String(stop.platform).toUpperCase().startsWith('PF')
+            ? String(stop.platform)
+            : `PF ${stop.platform}`
+          : 'PF 1';
+
         return {
           stop_no: stop.sequence || idx + 1,
-          station_code: stop.stationCode,
-          station_name: stop.stationName || stationNameMap[stop.stationCode] || stop.stationCode,
-          scheduled_arrival: stop.scheduledArrival,
-          scheduled_departure: stop.scheduledDeparture,
-          predicted_eta: stop.actualArrival || stop.scheduledArrival,
-          distance_km: stop.distance,
-          platform: stop.platform ? `PF ${stop.platform}` : null,
+          station_code: stnCode,
+          station_name: stnName,
+          scheduled_arrival: schedArr,
+          scheduled_departure: schedDep,
+          predicted_eta: predictedEta,
+          distance_km: stop.distance != null ? stop.distance : (stop.distance_km != null ? stop.distance_km : null),
+          platform: platformStr,
           status: stopStatus,
-          delay_minutes: stop.delayArrival || stop.delayDeparture || 0,
+          delay_minutes: delayForStop,
         };
       });
     }
 
-    if (Array.isArray(liveRouteStops) && liveRouteStops.length > 0) {
-      return liveRouteStops.map((stop, idx) => ({
-        stop_no: stop.sequence || idx + 1,
-        station_code: stop.code,
-        station_name: stop.name || stationNameMap[stop.code] || stop.code,
-        scheduled_arrival: null,
-        scheduled_departure: null,
-        predicted_eta: null,
-        distance_km: null,
-        platform: 'PF 1',
-        status: idx === 0 ? 'DEPARTED' : 'UPCOMING',
-        delay_minutes: 0,
-      }));
+    if (liveRouteStops) {
+      const curIdx = liveRouteStops.findIndex((s) => (s.code || s.stationCode) === currStationCode);
+
+      return liveRouteStops.map((stop, idx) => {
+        const stnCode = stop.code || stop.stationCode || '';
+        const stnName = stop.name || stop.stationName || stationNameMap[stnCode] || stnCode;
+        let stopStatus = 'UPCOMING';
+
+        if (currStationCode && stnCode === currStationCode) {
+          stopStatus = 'AT_STATION';
+        } else if (nextStationCode && stnCode === nextStationCode) {
+          stopStatus = 'NEXT_STOP';
+        } else if (curIdx !== -1) {
+          if (idx < curIdx) stopStatus = 'DEPARTED';
+          else if (idx === curIdx + 1 && !nextStationCode) stopStatus = 'NEXT_STOP';
+        } else if (idx === 0) {
+          stopStatus = 'DEPARTED';
+        }
+
+        const schedArr = stop.scheduledArrival || stop.arrival || null;
+        const schedDep = stop.scheduledDeparture || stop.departure || null;
+        const delayForStop = Number(stop.delayArrival ?? stop.delay ?? updatedTotalDelay ?? liveDelay ?? 0);
+        const predictedEta = stop.actualArrival
+          ? formatTimeWithAmPm(stop.actualArrival)
+          : schedArr
+            ? calculateExpectedTime(schedArr, delayForStop)
+            : null;
+
+        const platformStr = stop.platform
+          ? String(stop.platform).toUpperCase().startsWith('PF')
+            ? String(stop.platform)
+            : `PF ${stop.platform}`
+          : 'PF 1';
+
+        return {
+          stop_no: stop.sequence || idx + 1,
+          station_code: stnCode,
+          station_name: stnName,
+          scheduled_arrival: schedArr,
+          scheduled_departure: schedDep,
+          predicted_eta: predictedEta,
+          distance_km: stop.distance != null ? stop.distance : null,
+          platform: platformStr,
+          status: stopStatus,
+          delay_minutes: delayForStop,
+        };
+      });
     }
 
     if (selectedTrain?.all_stops && selectedTrain.all_stops.length > 0) {
@@ -420,15 +534,15 @@ export function LiveMapPage() {
           scheduled_departure: null,
           predicted_eta: null,
           distance_km: null,
-          platform: null,
+          platform: 'PF 1',
           status: stopStatus,
-          delay_minutes: 0,
+          delay_minutes: finalDelay || accumulatedDelay || 0,
         };
       });
     }
 
     return [];
-  }, [liveStatusData, selectedTrain, selectedTrainDetails, currentTrain, currentStn, status, stationNameMap]);
+  }, [liveStatusData, selectedTrain, selectedTrainDetails, currentTrain, currentStn, currStationCode, nextStationCode, status, stationNameMap, updatedTotalDelay, liveDelay, finalDelay, accumulatedDelay]);
 
   const nextUpcomingStations = useMemo(() => {
     if (selectedTrain?.upcoming_stops && selectedTrain.upcoming_stops.length > 0) {
@@ -485,8 +599,11 @@ export function LiveMapPage() {
     trainType: trainInfo.type || trainInfo.trainType || 'Express',
     updatedTotalDelay,
     updatedEta,
-    scheduledEta: formatHumanTime(scheduledDestinationEta),
+    nextHaltEta,
+    nextHaltScheduled,
+    scheduledEta: formatTimeWithAmPm(scheduledDestinationEta),
     operationalAnalysis: liveStatusData?.operational_analysis,
+    liveMlPrediction: liveStatusData?.live_ml_prediction,
     formatHumanTime,
   };
 
@@ -494,6 +611,13 @@ export function LiveMapPage() {
     hasActiveConflict,
     conflictDelay,
     currentStn,
+    nextStn,
+    nextStationEtaFormatted: nextUpcomingStations[0]
+      ? formatIsoOrTime(nextUpcomingStations[0]?.predicted_eta || nextUpcomingStations[0]?.scheduled_arrival)
+      : '—',
+    nextStationScheduledFormatted: nextUpcomingStations[0]
+      ? formatIsoOrTime(nextUpcomingStations[0]?.scheduled_arrival || nextUpcomingStations[0]?.scheduled_departure)
+      : '—',
     getStationLabel,
     accumulatedDelay,
     finalDelay,
@@ -505,13 +629,15 @@ export function LiveMapPage() {
     nextUpcomingStations,
     formatIsoOrTime,
     operationalReasoning,
+    calculateExpectedTime,
   };
 
   return (
-    <div className="relative w-full h-full flex-1 overflow-hidden bg-[#F4F5F7] select-none">
+    <div className="relative w-full h-full flex-1 overflow-hidden bg-[#ECEEF2] select-none">
       {/* 1. Full-Bleed Map Canvas (Spans 100% of the viewport width and height) */}
       <div className="absolute inset-0 w-full h-full">
         <MapLibreRailwayMap
+          ref={mapRef}
           topology={topology}
           trains={trains}
           selectedTrainNo={selectedTrainNo}
@@ -527,6 +653,8 @@ export function LiveMapPage() {
 
       {/* 2. Top Controls Bar: Layer Toggles for Live Feed, Virtual Sim, and Overview */}
       <MapControlsToolbar
+        liveTrainData={liveTrainMapData}
+        onCenterLiveTrain={() => mapRef.current?.centerLiveTrain?.()}
         showLiveFeed={showLiveFeed}
         onToggleLiveFeed={() => setShowLiveFeed((prev) => !prev)}
         showVirtualSim={showVirtualSim}
@@ -541,19 +669,23 @@ export function LiveMapPage() {
         <StationTimelineSidebar
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
-          trainNo={trainNo}
-          trainName={trainName}
+          trainNo={liveStatusData ? (liveTrainNo || trainNo) : trainNo}
+          trainName={liveStatusData ? (liveTrainName || trainName) : trainName}
           trains={trains}
           onSelectTrain={(val) => {
             setSelectedTrainNo(val);
             setCustomTrainInput(String(val));
+            if (liveStatusData) {
+              handleFetchLiveStatus(val);
+            }
           }}
           setCustomTrainInput={setCustomTrainInput}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           filteredStations={filteredStations}
           totalStops={stationTimetable.length}
-          currentStn={currentStn}
+          currentStn={currStationCode || currentStn}
+          nextStn={nextStationCode || nextStn}
           activeStationCode={activeStationCode}
           onSelectStation={handleSelectStationOnMap}
           wsConnected={wsConnected}
@@ -588,6 +720,8 @@ export function LiveMapPage() {
             onToggleHideLiveFeed={() => setShowLiveFeed((prev) => !prev)}
             showVirtualSim={showVirtualSim}
             onToggleVirtualSim={() => setShowVirtualSim((prev) => !prev)}
+            stationTimetable={stationTimetable}
+            activeConflicts={activeConflicts}
             liveTelemetryProps={liveTelemetryProps}
             virtualSimulationProps={virtualSimulationProps}
           />

@@ -163,9 +163,52 @@ export function extractTimeDisplay(raw) {
   return str;
 }
 
+/**
+ * Formats time with standard space before AM/PM e.g. "09:55 AM"
+ */
+export function formatTimeWithAmPm(raw) {
+  const extracted = extractTimeDisplay(raw);
+  if (!extracted) return '--';
+  return extracted.replace(/([0-9])([AP]M)/i, '$1 $2');
+}
+
+/**
+ * Computes projected expected arrival time by adding predicted delay minutes to scheduled time.
+ */
+export function calculateExpectedTime(schedTimeStr, delayMinutes) {
+  if (!schedTimeStr || schedTimeStr === '--') return '--';
+  const raw = String(schedTimeStr).trim();
+  const isPm = raw.toUpperCase().includes('PM');
+  const isAm = raw.toUpperCase().includes('AM');
+
+  const match = raw.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return formatTimeWithAmPm(schedTimeStr);
+
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+
+  if (isPm && hours < 12) hours += 12;
+  if (isAm && hours === 12) hours = 0;
+
+  const totalMinutes = (hours * 60 + minutes + Math.round(Number(delayMinutes) || 0)) % 1440;
+  const positiveMinutes = totalMinutes < 0 ? totalMinutes + 1440 : totalMinutes;
+
+  const expH = Math.floor(positiveMinutes / 60);
+  const expM = positiveMinutes % 60;
+  const ampm = expH >= 12 ? 'PM' : 'AM';
+  let displayH = expH % 12;
+  displayH = displayH ? displayH : 12;
+  const displayHStr = displayH < 10 ? `0${displayH}` : `${displayH}`;
+  const displayMStr = expM < 10 ? `0${expM}` : `${expM}`;
+  return `${displayHStr}:${displayMStr} ${ampm}`;
+}
+
 export default {
   formatDateDisplay,
   formatDateHeader,
   formatDuration,
   extractTimeDisplay,
+  formatTimeWithAmPm,
+  calculateExpectedTime,
 };
+

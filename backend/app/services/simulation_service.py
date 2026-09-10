@@ -251,6 +251,7 @@ class SimulationService:
                 "destination_station": t.destination_station or (route_stops[-1] if route_stops else ""),
                 "route_stations": route_stops,
                 "route_coordinates": route_coords,
+                "current_weather": train_entity.current_weather.model_dump() if (train_entity and train_entity.current_weather) else None,
             })
         return trains_result
 
@@ -259,7 +260,9 @@ class SimulationService:
         if not train:
             return None
         sim_time = self.engine.clock.current_time
-        return train.get_state(sim_time).model_dump()
+        res = train.get_state(sim_time).model_dump()
+        res["current_weather"] = train.current_weather.model_dump() if train.current_weather else None
+        return res
 
     def get_train_eta(self, train_no: int) -> Optional[Dict[str, Any]]:
         train = self.engine.trains.get(train_no)
@@ -287,7 +290,7 @@ class SimulationService:
         return [c for c in self.engine.active_conflicts if c.get("train_no") == train_no]
 
     async def get_train_live_status(self, train_no: int) -> Dict[str, Any]:
-        """Fetch live status via configured provider, decoupled from simulation, and compute ML/ETA predictions."""
+        """Fetch live status via configured provider, decoupled from simulation, and compute ML/ETA predictions for all upcoming stations."""
         provider = get_live_provider()
         live_data = await provider.get_live_status(train_no)
         sim_state = self.get_train_state(train_no)
@@ -307,43 +310,141 @@ class SimulationService:
                 except Exception:
                     p_tier = PriorityTier.TIER_1_PREMIUM
 
-                sched_arr = None
-                if train_ent and train_ent.next_stop and train_ent.next_stop.get("scheduled_arrival"):
-                    sched_arr = train_ent.next_stop["scheduled_arrival"]
-                elif train_ent and train_ent.current_stop and train_ent.current_stop.get("scheduled_arrival"):
-                    sched_arr = train_ent.current_stop["scheduled_arrival"]
+                # Helper to parse time string/datetime safely
+                def _parse_stop_time(val: Any) -> datetime:
+                    if isinstance(val, datetime):
+                        return val
+                    now = datetime.now()
+                    if not val:
+                        return now
+                    s = str(val).strip()
+                    try:
+                        if "T" in s:
+                            return datetime.fromisoformat(s.replace("Z", "+00:00"))
+                        if " " in s and ":" in s:
+                            parts = s.split(" ")
+                            if len(parts) >= 2 and "-" in parts[0]:
+                                return datetime.strptime(s[:19], "%Y-%m-%d %H:%M:%S")
+                        if ":" in s:
+                            t_parts = s.split(":")
+                            hh = int(t_parts[0])
+                            mm = int(t_parts[1])
+                            return datetime(now.year, now.month, now.day, hh, mm)
+                    except Exception:
+                        pass
+                    return now
+
+                raw_data = getattr(live_data, "raw_data", None) or {}
+                route_list = raw_data.get("route") or raw_data.get("route_stops") or []
+                if not route_list and sim_state:
+                    route_list = sim_state.get("all_stops") or []
+
+                curr_code = getattr(live_data, "current_station", "") or (raw_data.get("currentLocation", {}).get("stationCode")) or ""
+                next_code = getattr(live_data, "next_station", "") or (raw_data.get("nextHalt", {}).get("stationCode")) or ""
+
+                cur_idx = -1
+                if route_list:
+                    for i, st in enumerate(route_list):
+                        s_code = st.get("stationCode") or st.get("code") or st.get("station_code") or ""
+                        if curr_code and s_code == curr_code:
+                            cur_idx = i
+                            break
+
+                upcoming_stops_candidates = []
+                if cur_idx != -1 and cur_idx + 1 < len(route_list):
+                    upcoming_stops_candidates = route_list[cur_idx + 1:]
+                elif next_code:
+                    next_found = False
+                    for st in route_list:
+                        s_code = st.get("stationCode") or st.get("code") or st.get("station_code") or ""
+                        if s_code == next_code:
+                            next_found = True
+                        if next_found:
+                            upcoming_stops_candidates.append(st)
                 else:
-                    sched_arr = datetime.now()
+                    upcoming_stops_candidates = route_list[1:] if len(route_list) > 1 else route_list
 
-                hour_val = sched_arr.hour if hasattr(sched_arr, "hour") else datetime.now().hour
-
-                inf_input = StationInferenceInput(
-                    hour_of_day=hour_val,
-                    current_accumulated_delay=max(0.0, obs_delay),
-                    priority_tier=p_tier,
-                    weather=train_ent.current_weather if train_ent else None,
-                    is_origin=(obs_delay == 0.0),
-                )
-                pred_res = predict_delay(inf_input)
                 conflict_delay = float(train_ent.conflict_delay) if train_ent else 0.0
+                upcoming_predictions = []
+                running_delay = obs_delay
 
-                eta_res = calculate_station_eta(
-                    scheduled_arrival=sched_arr,
-                    predicted_delay_minutes=pred_res.predicted_delay_minutes,
-                    conflict_delay_minutes=conflict_delay,
-                    is_fallback=pred_res.is_fallback,
-                    fallback_reason=pred_res.fallback_reason,
-                )
+                for idx, stop in enumerate(upcoming_stops_candidates):
+                    s_code = stop.get("stationCode") or stop.get("code") or stop.get("station_code") or f"STN_{idx+1}"
+                    s_name = stop.get("stationName") or stop.get("name") or stop.get("station_name") or s_code
+                    sched_arr_raw = stop.get("scheduledArrival") or stop.get("scheduled_arrival") or stop.get("arrival") or stop.get("scheduledDeparture") or stop.get("departure")
+                    sched_dt = _parse_stop_time(sched_arr_raw)
+
+                    inf_input = StationInferenceInput(
+                        hour_of_day=sched_dt.hour,
+                        current_accumulated_delay=max(0.0, running_delay),
+                        priority_tier=p_tier,
+                        weather=train_ent.current_weather if train_ent else None,
+                        is_origin=False,
+                    )
+                    pred_res = predict_delay(inf_input)
+                    station_eta_res = calculate_station_eta(
+                        scheduled_arrival=sched_dt,
+                        predicted_delay_minutes=pred_res.predicted_delay_minutes,
+                        conflict_delay_minutes=conflict_delay if idx == 0 else 0.0,
+                        is_fallback=pred_res.is_fallback,
+                        fallback_reason=pred_res.fallback_reason,
+                    )
+
+                    running_delay = pred_res.predicted_delay_minutes
+                    upcoming_predictions.append({
+                        "station_code": s_code,
+                        "station_name": s_name,
+                        "sequence": stop.get("sequence") or stop.get("stop_no") or idx + 1,
+                        "scheduled_arrival": sched_dt.strftime("%H:%M:%S") if sched_arr_raw else None,
+                        "predicted_eta": station_eta_res.estimated_arrival.strftime("%H:%M:%S"),
+                        "predicted_delay_minutes": round(pred_res.predicted_delay_minutes, 1),
+                        "total_predicted_delay_minutes": round(station_eta_res.total_delay_minutes, 1),
+                        "is_next_station": (idx == 0),
+                        "is_final_destination": (idx == len(upcoming_stops_candidates) - 1),
+                    })
+
+                next_pred = upcoming_predictions[0] if upcoming_predictions else None
+                dest_pred = upcoming_predictions[-1] if upcoming_predictions else None
+
+                if not next_pred:
+                    sched_arr = datetime.now()
+                    inf_input = StationInferenceInput(
+                        hour_of_day=sched_arr.hour,
+                        current_accumulated_delay=max(0.0, obs_delay),
+                        priority_tier=p_tier,
+                        weather=train_ent.current_weather if train_ent else None,
+                        is_origin=(obs_delay == 0.0),
+                    )
+                    pred_res = predict_delay(inf_input)
+                    eta_res = calculate_station_eta(
+                        scheduled_arrival=sched_arr,
+                        predicted_delay_minutes=pred_res.predicted_delay_minutes,
+                        conflict_delay_minutes=conflict_delay,
+                        is_fallback=pred_res.is_fallback,
+                        fallback_reason=pred_res.fallback_reason,
+                    )
+                    next_pred = {
+                        "station_code": next_code or "NEXT",
+                        "station_name": next_code or "Next Station",
+                        "scheduled_arrival": sched_arr.strftime("%H:%M:%S"),
+                        "predicted_eta": eta_res.estimated_arrival.strftime("%H:%M:%S"),
+                        "predicted_delay_minutes": round(pred_res.predicted_delay_minutes, 1),
+                        "total_predicted_delay_minutes": round(eta_res.total_delay_minutes, 1),
+                    }
+                    dest_pred = next_pred
 
                 live_ml_result = {
                     "live_observed_delay_minutes": round(obs_delay, 1),
-                    "ml_predicted_delay_minutes": round(pred_res.predicted_delay_minutes, 1),
+                    "ml_predicted_delay_minutes": next_pred["predicted_delay_minutes"],
                     "conflict_delay_minutes": round(conflict_delay, 1),
-                    "total_predicted_delay_minutes": round(eta_res.total_delay_minutes, 1),
-                    "scheduled_arrival": sched_arr.isoformat() if hasattr(sched_arr, "isoformat") else str(sched_arr),
-                    "updated_predicted_eta": eta_res.estimated_arrival.isoformat() if hasattr(eta_res.estimated_arrival, "isoformat") else str(eta_res.estimated_arrival),
-                    "is_fallback": pred_res.is_fallback,
-                    "fallback_reason": pred_res.fallback_reason,
+                    "total_predicted_delay_minutes": next_pred["total_predicted_delay_minutes"],
+                    "scheduled_arrival": next_pred["scheduled_arrival"],
+                    "updated_predicted_eta": next_pred["predicted_eta"],
+                    "next_station_prediction": next_pred,
+                    "final_destination_prediction": dest_pred,
+                    "upcoming_stations_predictions": upcoming_predictions,
+                    "is_fallback": bool(train_ent and train_ent.is_fallback),
+                    "fallback_reason": getattr(train_ent, "fallback_reason", None),
                 }
             except Exception as e:
                 logger.warning(f"Error calculating live ML prediction for train {train_no}: {e}")

@@ -81,7 +81,7 @@ export function DashboardLayout() {
   return (
     <div className="h-screen overflow-hidden bg-[#F4F6F8] text-slate-800 flex flex-col font-sans antialiased">
       {/* 1. Clean Top Navigation Header (Inspired by Konux reference design) */}
-      <header className="shrink-0 h-14 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between shadow-xs z-40">
+      <header className="shrink-0 h-14 bg-white px-4 sm:px-6 flex items-center justify-between z-40">
         {/* Left: Brand Mark + Primary Navigation Tabs */}
         <div className="flex items-center gap-6 md:gap-8 h-full">
           {/* Brand Logo */}
@@ -103,7 +103,7 @@ export function DashboardLayout() {
           </NavLink>
 
           {/* Navigation Links (Horizontal minimal tab style) */}
-          <nav className="flex items-center h-full gap-1 sm:gap-2">
+          <nav className="flex items-center h-full gap-1 sm:gap-1.5">
             {navItems.map((item) => {
               const isActive =
                 item.path === '/control-room'
@@ -114,11 +114,10 @@ export function DashboardLayout() {
                 <NavLink
                   key={item.path}
                   to={item.path}
-                  className={`h-full flex items-center gap-1.5 px-3 border-b-2 text-xs font-semibold tracking-wide transition-all ${
-                    isActive
-                      ? 'border-[#0284C7] text-slate-950 font-bold'
-                      : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${isActive
+                      ? 'bg-[#0284C7]/10 text-[#0284C7] font-bold'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
                 >
                   <span>{item.label}</span>
                   {item.badge && (
@@ -137,9 +136,8 @@ export function DashboardLayout() {
           {/* Simulation Clock & Controls */}
           <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded bg-slate-50 border border-slate-200 text-xs">
             <span
-              className={`w-2 h-2 rounded-full ${
-                wsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-              }`}
+              className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                }`}
               title={wsConnected ? 'WebSocket Live Feed Synced' : 'Syncing Feed'}
             />
             <span className="font-mono text-slate-700 text-[11px]">
@@ -155,11 +153,10 @@ export function DashboardLayout() {
             <button
               type="button"
               onClick={!isRunning || isPaused ? resumeSimulation : pauseSimulation}
-              className={`p-1.5 rounded border text-xs font-semibold transition-all flex items-center justify-center ${
-                !isRunning || isPaused
+              className={`p-1.5 rounded border text-xs font-semibold transition-all flex items-center justify-center ${!isRunning || isPaused
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
                   : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-              }`}
+                }`}
               title={!isRunning || isPaused ? 'Resume Simulation' : 'Pause Simulation'}
             >
               <span className="material-symbols-outlined text-[16px]">

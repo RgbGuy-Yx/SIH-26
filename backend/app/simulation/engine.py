@@ -23,6 +23,7 @@ from app.simulation.schemas import (
 from app.simulation.clock import VirtualClock
 from app.simulation.train_entity import TrainEntity
 from app.ml.schemas import PriorityTier, WeatherInput
+from app.integrations.weather_provider import weather_provider
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,15 @@ class SimulationEngine:
                     base_date=self.clock.current_time,
                     csv_path=self.csv_path,
                 )
+                if self.config.weather_enabled:
+                    stn_code = entity.current_stop.get("station_code") if entity.current_stop else None
+                    w = weather_provider.get_weather(
+                        station_code=stn_code,
+                        lat=entity.latitude,
+                        lon=entity.longitude
+                    )
+                    if w is not None:
+                        entity.set_weather(w)
                 entity.update_position(self.clock.current_time)
                 self.trains[t_no] = entity
 
@@ -103,7 +113,6 @@ class SimulationEngine:
         """
         start_t = initial_time or self.config.start_time or datetime(2026, 8, 28, 16, 30, 0)
         self.clock.reset(initial_time=start_t)
-        self.clock.start()
         self.conflict_engine.clear()
         self.active_conflicts.clear()
         self.load_trains(self.config.selected_train_ids)
@@ -124,8 +133,19 @@ class SimulationEngine:
         """
         sim_time = self.clock.tick(delta_real_seconds=delta_seconds)
 
-        # 1. Update movement for each train
+        # 1. Update movement and atmospheric weather for each train
         for train in self.trains.values():
+            if self.config.weather_enabled:
+                stn_code = train.current_stop.get("station_code") if train.current_stop else None
+                weather = weather_provider.get_weather(
+                    station_code=stn_code,
+                    lat=train.latitude,
+                    lon=train.longitude
+                )
+                if weather is not None and train.current_weather != weather:
+                    train.set_weather(weather)
+                elif weather is not None and train.current_weather is None:
+                    train.set_weather(weather)
             train.update_position(sim_time)
 
         # 2. Check and arbitrate track section conflicts
