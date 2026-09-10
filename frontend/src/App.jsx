@@ -23,21 +23,15 @@ function AuthLoading() {
 }
 
 // Guard for guest-only public routes (e.g., /login)
-// 1. If auth is loading → show spinner
-// 2. If authenticated as PASSENGER → redirect to /user-dashboard
-// 3. If authenticated as CONTROL_ROOM & OTP verified → redirect to /control-room
-// 4. Otherwise → render guest page (e.g. LoginPage)
+// If authenticated as CONTROL_ROOM & OTP verified → redirect to /control-room
+// Otherwise → render guest page (e.g. LoginPage)
 function PublicRoute({ children }) {
-  const { isControlRoomAuth, isPassengerAuth, loading } = useAuth();
+  const { isControlRoomAuth, loading } = useAuth();
   const location = useLocation();
   const fromPath = location.state?.from?.pathname;
 
   if (loading) {
     return <AuthLoading />;
-  }
-
-  if (isPassengerAuth) {
-    return <Navigate to={fromPath || '/user-dashboard'} replace />;
   }
 
   if (isControlRoomAuth) {
@@ -49,9 +43,9 @@ function PublicRoute({ children }) {
 
 // Guard for protected Control Room routes
 // Requires: isControlRoomAuth === true (Officer ID + Password AND Mobile OTP verified)
-// If PASSENGER attempts access → block and redirect to /login
+// Otherwise → block and redirect to /login
 function ProtectedRoute({ children }) {
-  const { isControlRoomAuth, isPassengerAuth, loading } = useAuth();
+  const { isControlRoomAuth, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -62,52 +56,13 @@ function ProtectedRoute({ children }) {
     return children;
   }
 
-  if (isPassengerAuth) {
-    return <Navigate to="/login" replace />;
-  }
-
   return <Navigate to="/login" state={{ from: location }} replace />;
-}
-
-// Guard for Passenger View
-// If CONTROL_ROOM Officer attempts to access passenger view → redirect to /control-room
-function PassengerRouteGuard({ children }) {
-  const { isControlRoomAuth, loading } = useAuth();
-
-  if (loading) {
-    return <AuthLoading />;
-  }
-
-  if (isControlRoomAuth) {
-    return <Navigate to="/control-room" replace />;
-  }
-
-  return children;
-}
-
-// Intelligent Root Redirect Component
-function RootRedirect() {
-  const { isControlRoomAuth, isPassengerAuth, loading } = useAuth();
-
-  if (loading) {
-    return <AuthLoading />;
-  }
-
-  if (isControlRoomAuth) {
-    return <Navigate to="/control-room" replace />;
-  }
-
-  if (isPassengerAuth) {
-    return <Navigate to="/user-dashboard" replace />;
-  }
-
-  return <Navigate to="/login" replace />;
 }
 
 function AppRoutes() {
   return (
     <Routes>
-      {/* Public Login Route (Guarded: Authenticated users redirected to dashboard) */}
+      {/* Public Login Route (Guarded: Authenticated officers redirected to control room) */}
       <Route
         path="/login"
         element={
@@ -117,15 +72,8 @@ function AppRoutes() {
         }
       />
 
-      {/* ===== Passenger View (Guarded for Passengers/Guests) ===== */}
-      <Route
-        path="/user-dashboard"
-        element={
-          <PassengerRouteGuard>
-            <UserLayout />
-          </PassengerRouteGuard>
-        }
-      >
+      {/* ===== Public User / Passenger Portal ===== */}
+      <Route path="/user-dashboard" element={<UserLayout />}>
         <Route index element={<UserDashboardPage />} />
       </Route>
 

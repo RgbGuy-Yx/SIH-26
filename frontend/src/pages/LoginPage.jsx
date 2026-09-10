@@ -17,10 +17,18 @@ export function LoginPage() {
 
   // Mode Selection: 'control_room' (Default) | 'user' (Passenger)
   const searchParams = new URLSearchParams(location.search);
-  const initialMode =
-    location.state?.mode ||
-    (searchParams.get('role') === 'passenger' || searchParams.get('mode') === 'user' ? 'user' : 'control_room');
-  const [authMode, setAuthMode] = useState(initialMode);
+  const isPassengerRequest =
+    location.state?.mode === 'user' ||
+    searchParams.get('role') === 'passenger' ||
+    searchParams.get('mode') === 'user';
+  const [authMode, setAuthMode] = useState('control_room');
+
+  // Auto-redirect User/Passenger requests directly to /user-dashboard (No login/signup screen)
+  React.useEffect(() => {
+    if (isPassengerRequest) {
+      navigate('/user-dashboard', { replace: true });
+    }
+  }, [isPassengerRequest, navigate]);
 
   // User Sub-mode: 'login' | 'signup'
   const [userSubMode, setUserSubMode] = useState('login');
@@ -93,10 +101,15 @@ export function LoginPage() {
     try {
       await openMsg91PrebuiltWidget(
         cleanMobile,
-        (data) => {
+        async (data) => {
           setSuccessMsg('OTP verified successfully!');
-          completeOfficerAuth(pendingOfficerUser);
-          navigate(fromPath || '/control-room', { replace: true });
+          const authOk = await completeOfficerAuth(pendingOfficerUser);
+          if (authOk) {
+            navigate(fromPath || '/control-room', { replace: true });
+          } else {
+            setErrorMsg('Session verification failed. Please sign in again.');
+            setAuthStep('credentials');
+          }
         },
         (error) => {
           console.warn('MSG91 Widget Error:', error);
@@ -129,8 +142,13 @@ export function LoginPage() {
       const res = await verifyMsg91Otp(otp);
       if (res.success) {
         setSuccessMsg('OTP verified successfully!');
-        completeOfficerAuth(pendingOfficerUser);
-        navigate(fromPath || '/control-room', { replace: true });
+        const authOk = await completeOfficerAuth(pendingOfficerUser);
+        if (authOk) {
+          navigate(fromPath || '/control-room', { replace: true });
+        } else {
+          setErrorMsg('Session verification failed. Please sign in again.');
+          setAuthStep('credentials');
+        }
       } else {
         setErrorMsg(res.message || 'Invalid OTP. Please try again.');
       }
@@ -245,8 +263,12 @@ export function LoginPage() {
     try {
       const res = await userSignup(userFullName, userEmail, userPassword);
       if (res.success) {
-        setSuccessMsg('Account created successfully! Directing to passenger portal...');
-        navigate(fromPath || '/user-dashboard', { replace: true });
+        if (res.requiresConfirmation) {
+          setSuccessMsg(res.message || 'Account created! Please check your email to confirm your account.');
+        } else {
+          setSuccessMsg('Account created successfully! Directing to passenger portal...');
+          navigate(fromPath || '/user-dashboard', { replace: true });
+        }
       } else {
         setErrorMsg(res.message || 'Failed to create account.');
       }
@@ -295,26 +317,18 @@ export function LoginPage() {
                 setErrorMsg('');
                 setSuccessMsg('');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${authMode === 'control_room'
-                  ? 'bg-white text-[#0284C7] shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-                }`}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer bg-white text-[#0284C7] shadow-xs"
             >
               CONTROL ROOM
             </button>
             <button
               type="button"
               onClick={() => {
-                setAuthMode('user');
-                setErrorMsg('');
-                setSuccessMsg('');
+                navigate('/user-dashboard');
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${authMode === 'user'
-                  ? 'bg-white text-[#0284C7] shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-                }`}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-slate-500 hover:text-slate-800"
             >
-              USER
+              USER / PASSENGER
             </button>
           </div>
         </div>

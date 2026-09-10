@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { searchStaticStations } from '../data/indianStations';
+import { supabase, getAccessToken } from '../lib/supabase';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : '';
 
@@ -9,6 +10,51 @@ const client = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// --- Axios Interceptors for Supabase JWT Authentication ---
+
+// Request Interceptor: Attach Supabase JWT as Authorization Bearer header
+client.interceptors.request.use(
+  async (config) => {
+    try {
+      const accessToken = await getAccessToken();
+      if (accessToken) {
+        config.headers.Authorization = `Bearer ${accessToken}`;
+      }
+    } catch (err) {
+      // Silently proceed without auth header if token retrieval fails
+      // (public endpoints will still work)
+      console.debug('[API] Could not attach auth token:', err);
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response Interceptor: Handle 401 Unauthorized (expired/invalid JWT)
+client.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      console.warn('[API] 401 Unauthorized — session expired or invalid. Signing out.');
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.warn('[API] SignOut after 401 failed:', signOutErr);
+      }
+      // Redirect to login if on a protected route and not already on login or public routes
+      if (
+        typeof window !== 'undefined' &&
+        !window.location.pathname.startsWith('/login') &&
+        !window.location.pathname.startsWith('/user-dashboard') &&
+        window.location.pathname !== '/'
+      ) {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 // In-Memory 1-Hour TTL Cache for Static Train Schedules
 const SCHEDULE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 Hour TTL

@@ -50,8 +50,7 @@ export default function LandingNavbar() {
         {/* Desktop Quick Links & CTAs */}
         <div className="landing-nav-actions hidden md:flex items-center gap-2.5">
           <Link
-            to="/login?role=passenger"
-            state={{ mode: 'user' }}
+            to="/user-dashboard"
             className="nav-action-link"
           >
             <span className="material-symbols-outlined text-[15px] text-slate-400" aria-hidden="true">
@@ -94,8 +93,7 @@ export default function LandingNavbar() {
             </div>
           </div>
           <Link
-            to="/login?role=passenger"
-            state={{ mode: 'user' }}
+            to="/user-dashboard"
             className="landing-nav-link flex items-center gap-2"
             onClick={() => setMenuOpen(false)}
           >

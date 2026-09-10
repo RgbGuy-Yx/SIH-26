@@ -1,0 +1,1 @@
+{"success": true, "data": {"from": {"code": "TPJ", "name": "Tiruchchirappalli Jn"}, "to": {"code": "SC", "name": "Secunderabad Jn"}, "trains": [], "count": 0}, "meta": {"timestamp": "2026-09-10T20:34:34+05:30", "traceId": "e5f79fdc-9899-4932-a443-4dadb82672ce", "source": "database", "executionTime": 38}}

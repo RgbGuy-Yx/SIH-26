@@ -1,0 +1,1 @@
+{"success": true, "data": {"from": {"code": "SEC", "name": "SEC"}, "to": {"code": "TPJ", "name": "Tiruchchirappalli Jn"}, "trains": [], "count": 0}, "meta": {"timestamp": "2026-09-10T20:34:26+05:30", "traceId": "711e587e-9a50-4295-96f7-2bb5ed55b899", "source": "database", "executionTime": 4}}

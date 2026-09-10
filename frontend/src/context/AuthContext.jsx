@@ -29,6 +29,17 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  // Clear all local authentication state
+  const clearAuthState = useCallback(() => {
+    setSession(null);
+    setUser(null);
+    setUserProfile(null);
+    setAuthRoleState(null);
+    setIsOtpVerifiedState(false);
+    sessionStorage.removeItem('railradar_auth_role');
+    sessionStorage.removeItem('railradar_otp_verified');
+  }, []);
+
   // Initialize: get existing session + subscribe to auth changes
   useEffect(() => {
     let isMounted = true;
@@ -64,16 +75,61 @@ export const AuthProvider = ({ children }) => {
       async (event, newSession) => {
         if (!isMounted) return;
 
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
+        switch (event) {
+          case 'INITIAL_SESSION':
+            // Already handled by initAuth above — just sync state if needed
+            if (newSession?.user) {
+              setSession(newSession);
+              setUser(newSession.user);
+              const profile = await fetchProfile(newSession.user.id);
+              if (isMounted) setUserProfile(profile);
+            }
+            break;
 
-        if (newSession?.user) {
-          const profile = await fetchProfile(newSession.user.id);
-          if (isMounted) {
-            setUserProfile(profile);
-          }
-        } else {
-          setUserProfile(null);
+          case 'SIGNED_IN':
+            setSession(newSession);
+            setUser(newSession?.user ?? null);
+            if (newSession?.user) {
+              const profile = await fetchProfile(newSession.user.id);
+              if (isMounted) setUserProfile(profile);
+            }
+            break;
+
+          case 'TOKEN_REFRESHED':
+            // Silently update session — no UI disruption, no profile re-fetch needed
+            setSession(newSession);
+            if (newSession?.user) {
+              setUser(newSession.user);
+            }
+            break;
+
+          case 'SIGNED_OUT':
+            // Full state cleanup
+            if (isMounted) {
+              clearAuthState();
+            }
+            break;
+
+          case 'USER_UPDATED':
+            setSession(newSession);
+            setUser(newSession?.user ?? null);
+            if (newSession?.user) {
+              const profile = await fetchProfile(newSession.user.id);
+              if (isMounted) setUserProfile(profile);
+            }
+            break;
+
+          default:
+            // Handle any unknown events gracefully
+            setSession(newSession);
+            setUser(newSession?.user ?? null);
+            if (newSession?.user) {
+              const profile = await fetchProfile(newSession.user.id);
+              if (isMounted) setUserProfile(profile);
+            } else if (isMounted) {
+              setUserProfile(null);
+            }
+            break;
         }
 
         // Ensure loading is false after any auth event
@@ -87,7 +143,7 @@ export const AuthProvider = ({ children }) => {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, clearAuthState]);
 
   // --- Auth Actions ---
 
@@ -119,7 +175,8 @@ export const AuthProvider = ({ children }) => {
 
   // --- CONTROL ROOM OFFICER AUTHENTICATION ---
 
-  // Step 1: Validate Officer ID & Password (DOES NOT grant global authentication yet)
+  // Step 1: Validate Officer ID & Password via Supabase Auth
+  // DOES NOT grant global authentication yet — OTP verification (Step 2) is required
   const loginStep1 = async (identifier, password) => {
     const cleanIdentifier = identifier.trim();
     const isEmail = cleanIdentifier.includes('@');
@@ -128,13 +185,14 @@ export const AuthProvider = ({ children }) => {
       : `${cleanIdentifier.toLowerCase()}@railradar.gov.in`;
     const safePassword = password.length < 6 ? password.padEnd(6, '0') : password;
 
+    // Attempt Supabase sign-in
     let { data, error } = await supabase.auth.signInWithPassword({
       email: emailToUse,
       password: safePassword,
     });
 
-    let officerUser = null;
     if (error || !data.user) {
+      // If the user doesn't exist, attempt sign-up (auto-register for officers)
       try {
         const officerIdToStore = isEmail
           ? cleanIdentifier.split('@')[0].toUpperCase()
@@ -152,43 +210,61 @@ export const AuthProvider = ({ children }) => {
           },
         });
 
-        if (signUpRes.data?.user) {
-          officerUser = signUpRes.data.user;
+        if (signUpRes.error) {
+          return {
+            success: false,
+            message: signUpRes.error.message || 'Invalid Officer ID or password.',
+          };
         }
-      } catch (e) {
-        console.log('Auto-register fallback attempt completed', e);
-      }
 
-      if (!officerUser) {
-        officerUser = {
-          id: 'officer-' + cleanIdentifier.toLowerCase(),
-          email: emailToUse,
-          user_metadata: {
-            officer_id: isEmail ? cleanIdentifier.split('@')[0].toUpperCase() : cleanIdentifier.toUpperCase(),
-            full_name: 'District Control Officer',
-            role: 'CONTROL_ROOM',
-          },
+        if (signUpRes.data?.user) {
+          // Sign-up succeeded — the user now has a real Supabase account
+          return { success: true, officerUser: signUpRes.data.user, pendingOtp: true };
+        }
+
+        return {
+          success: false,
+          message: 'Failed to authenticate. Please check your credentials and try again.',
+        };
+      } catch (e) {
+        console.error('Officer auth fallback failed:', e);
+        return {
+          success: false,
+          message: 'Authentication error. Please try again.',
         };
       }
-    } else {
-      officerUser = data.user;
     }
 
-    // Step 1 successful -> Return pending user object WITHOUT populating global auth state yet!
-    return { success: true, officerUser, pendingOtp: true };
+    // Supabase sign-in succeeded — return the authenticated user (pending OTP)
+    return { success: true, officerUser: data.user, pendingOtp: true };
   };
 
   // Step 2: Finalize Control Room Officer Authentication AFTER OTP is verified
-  const completeOfficerAuth = (officerUser) => {
-    setUser(officerUser);
+  // Validates that a real Supabase session exists before promoting auth state
+  const completeOfficerAuth = async (officerUser) => {
+    // Verify a real Supabase session exists before granting control room access
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+
+    if (!currentSession?.user) {
+      console.error('completeOfficerAuth: No valid Supabase session found. Rejecting auth.');
+      clearAuthState();
+      return false;
+    }
+
+    // Use the session's verified user, not the passed-in object
+    const verifiedUser = currentSession.user;
+    setSession(currentSession);
+    setUser(verifiedUser);
+
     const profile = {
       role: 'CONTROL_ROOM',
-      officer_id: officerUser?.user_metadata?.officer_id || officerUser?.email?.split('@')[0]?.toUpperCase() || 'RO-AG-1024',
-      full_name: officerUser?.user_metadata?.full_name || 'District Control Officer',
+      officer_id: verifiedUser.user_metadata?.officer_id || verifiedUser.email?.split('@')[0]?.toUpperCase() || 'RO-AG-1024',
+      full_name: verifiedUser.user_metadata?.full_name || 'District Control Officer',
     };
     setUserProfile(profile);
     setAuthRole('CONTROL_ROOM');
     setOtpVerified(true);
+    return true;
   };
 
   // --- PASSENGER / USER AUTHENTICATION ---
@@ -196,27 +272,26 @@ export const AuthProvider = ({ children }) => {
   const userLogin = async (email, password) => {
     const cleanEmail = email.trim().toLowerCase();
 
-    let { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: cleanEmail,
       password: password,
     });
 
-    let passengerUser = null;
     if (error || !data.user) {
-      passengerUser = {
-        id: 'user-' + cleanEmail.replace(/[^a-z0-9]/g, ''),
-        email: cleanEmail,
-        user_metadata: {
-          full_name: cleanEmail.split('@')[0],
-          role: 'PASSENGER',
-        },
+      return {
+        success: false,
+        message: error?.message || 'Invalid email or password. Please try again.',
       };
-    } else {
-      passengerUser = data.user;
     }
 
+    // Supabase auth succeeded — use the real authenticated user
+    const passengerUser = data.user;
     setUser(passengerUser);
-    setUserProfile({ role: 'PASSENGER', full_name: passengerUser.user_metadata?.full_name || cleanEmail.split('@')[0] });
+    setSession(data.session);
+    setUserProfile({
+      role: 'PASSENGER',
+      full_name: passengerUser.user_metadata?.full_name || cleanEmail.split('@')[0],
+    });
     setAuthRole('PASSENGER');
     setOtpVerified(false);
     return { success: true, user: passengerUser };
@@ -237,23 +312,38 @@ export const AuthProvider = ({ children }) => {
       },
     });
 
-    let passengerUser = null;
-    if (error || !data.user) {
-      passengerUser = {
-        id: 'user-' + cleanEmail.replace(/[^a-z0-9]/g, ''),
-        email: cleanEmail,
-        user_metadata: {
-          full_name: cleanName,
-          role: 'PASSENGER',
-        },
+    if (error) {
+      return {
+        success: false,
+        message: error.message || 'Failed to create account. Please try again.',
       };
-    } else {
-      passengerUser = data.user;
     }
 
+    if (!data.user) {
+      return {
+        success: false,
+        message: 'Account creation failed. Please try again.',
+      };
+    }
+
+    // Check if email confirmation is required (user exists but session is null)
+    if (data.user && !data.session) {
+      return {
+        success: true,
+        user: data.user,
+        requiresConfirmation: true,
+        message: 'Account created! Please check your email to confirm your account before signing in.',
+      };
+    }
+
+    // Supabase auth succeeded with immediate session
+    const passengerUser = data.user;
     setUser(passengerUser);
-    if (data?.session) setSession(data.session);
-    setUserProfile({ role: 'PASSENGER', full_name: cleanName });
+    setSession(data.session);
+    setUserProfile({
+      role: 'PASSENGER',
+      full_name: cleanName,
+    });
     setAuthRole('PASSENGER');
     setOtpVerified(false);
     return { success: true, user: passengerUser };
@@ -265,11 +355,7 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       console.warn('Supabase signOut warning:', err);
     } finally {
-      setSession(null);
-      setUser(null);
-      setUserProfile(null);
-      setAuthRole(null);
-      setOtpVerified(false);
+      clearAuthState();
     }
   };
 

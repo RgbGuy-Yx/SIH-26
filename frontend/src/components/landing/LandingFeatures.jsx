@@ -202,8 +202,7 @@ export default function LandingFeatures() {
               <span>Control Room OCC</span>
             </Link>
             <Link
-              to="/login?role=passenger"
-              state={{ mode: 'user' }}
+              to="/user-dashboard"
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 text-xs font-semibold tracking-wide transition-colors shadow-xs"
             >
               <span className="material-symbols-outlined text-[16px] text-sky-600">person</span>
@@ -610,8 +609,7 @@ export default function LandingFeatures() {
             </div>
 
             <Link
-              to="/login?role=passenger"
-              state={{ mode: 'user' }}
+              to="/user-dashboard"
               className="inline-flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold tracking-wide transition-colors"
             >
               <span>Launch Passenger Portal</span>
@@ -756,7 +754,7 @@ export default function LandingFeatures() {
               <Link to="/user-dashboard" className="text-slate-400 hover:text-white transition-colors">
                 Live Radar Map
               </Link>
-              <Link to="/login?role=passenger" state={{ mode: 'user' }} className="text-slate-400 hover:text-white transition-colors">
+              <Link to="/user-dashboard" className="text-slate-400 hover:text-white transition-colors">
                 Passenger Portal
               </Link>
               <Link to="/login?role=control_room" state={{ mode: 'control_room' }} className="text-slate-400 hover:text-white transition-colors">

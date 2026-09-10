@@ -107,6 +107,14 @@ class Settings(BaseModel):
         default_factory=lambda: float(os.environ.get("SIMULATION_TICK_SECONDS", "1.0"))
     )
 
+    # Supabase JWT Authentication
+    SUPABASE_URL: str = Field(
+        default_factory=lambda: os.environ.get("SUPABASE_URL", "")
+    )
+    SUPABASE_JWT_SECRET: str = Field(
+        default_factory=lambda: os.environ.get("SUPABASE_JWT_SECRET", "")
+    )
+
     # CORS
     CORS_ORIGINS: List[str] = ["*"]
 

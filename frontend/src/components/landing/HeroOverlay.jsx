@@ -253,8 +253,7 @@ export default function HeroOverlay({ scrollProgress = 0 }) {
               {/* Action Buttons */}
               <div className="landing-final-actions">
                 <Link
-                  to="/login?role=passenger"
-                  state={{ mode: 'user' }}
+                  to="/user-dashboard"
                   className="landing-btn landing-btn-primary"
                 >
                   <span className="material-symbols-outlined text-[16px]" aria-hidden="true">person</span>

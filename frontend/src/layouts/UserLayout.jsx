@@ -91,16 +91,14 @@ export function UserLayout() {
               </span>
             </div>
 
-            {currentUser && (
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 transition-colors"
-                title="Logout"
-              >
-                <span className="material-symbols-outlined text-[18px]">logout</span>
-              </button>
-            )}
+            <NavLink
+              to="/"
+              className="p-1.5 rounded-lg text-slate-500 hover:text-[#0284C7] hover:bg-slate-100 transition-colors flex items-center gap-1 text-xs font-semibold"
+              title="Return to Home"
+            >
+              <span className="material-symbols-outlined text-[18px]">home</span>
+              <span className="hidden sm:inline">Home</span>
+            </NavLink>
           </div>
         </div>
       </header>
